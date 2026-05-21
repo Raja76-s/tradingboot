@@ -64,8 +64,8 @@ def get_signal(pair: str):
             {
                 "name": i.name,
                 "signal": i.signal.value,
-                "value": round(i.value, 4) if i.value else 0,
-                "weight": i.weight,
+                "value": round(float(i.value), 4) if i.value else 0,
+                "weight": float(i.weight),
                 "details": i.details,
             }
             for i in signal.indicator_signals
@@ -74,7 +74,7 @@ def get_signal(pair: str):
             {
                 "name": p.name,
                 "signal": p.signal.value,
-                "confidence": p.confidence,
+                "confidence": float(p.confidence),
                 "description": p.description,
             }
             for p in signal.pattern_signals
