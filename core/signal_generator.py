@@ -72,15 +72,16 @@ class SignalGenerator:
         callback: object | None = None,
     ) -> None:
         """Run continuous signal scanning."""
-        print(f"\n{Fore.CYAN}Starting Signal Generator...{Style.RESET_ALL}")
+        print(f"\n{Fore.CYAN}Starting Signal Generator (Multi-Timeframe)...{Style.RESET_ALL}")
         print(f"Pairs: {', '.join(self.config.trading.trading_pairs)}")
+        print(f"Timeframes: 5m, 15m, 1h, 4h (combined analysis)")
         print(f"Scan interval: {interval_seconds}s")
         print(f"Min confidence: {self.config.strategy.min_confidence_score}")
         print("-" * 60)
 
         while True:
             try:
-                signals = self.scan_all_pairs()
+                signals = self.scan_all_pairs(multi_timeframe=True)
                 actionable = [
                     s for s in signals
                     if s.action != "HOLD"

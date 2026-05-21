@@ -64,7 +64,7 @@ def cmd_signals() -> None:
             for signal in signals:
                 notifier.send_signal(signal)
 
-    generator.run_continuous(interval_seconds=60, callback=on_signal)
+    generator.run_continuous(interval_seconds=180, callback=on_signal)
 
 
 def cmd_backtest(pair: str = "BTCUSDT") -> None:
