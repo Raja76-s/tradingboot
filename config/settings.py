@@ -125,6 +125,7 @@ class TradingConfig:
         default_factory=lambda: [
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT",
             "ADAUSDT", "DOTUSDT", "MATICUSDT", "BNBUSDT",
+            "XAUUSDT", "XAGUSDT",
         ]
     )
     initial_balance: float = 20000.0

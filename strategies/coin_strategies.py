@@ -204,6 +204,23 @@ COIN_PROFILES: dict[str, CoinProfile] = {
         stop_loss_pct=1.0,
         take_profit_pct=2.0,
     ),
+    # Silver
+    "XAGUSDT": CoinProfile(
+        symbol="XAGUSDT",
+        name="Silver",
+        category="commodity",
+        volatility="medium",
+        recommended_timeframe="4h",
+        recommended_confidence=60,
+        description="More volatile than gold. Good for swing trading.",
+        best_indicators=[
+            "EMA Crossover (50/200)", "Bollinger Bands", "RSI",
+            "MACD", "Parabolic SAR", "Keltner Channels",
+        ],
+        risk_per_trade_pct=1.2,
+        stop_loss_pct=1.5,
+        take_profit_pct=3.0,
+    ),
 }
 
 
