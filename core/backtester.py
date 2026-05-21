@@ -47,6 +47,7 @@ class Backtester:
         self,
         df: pd.DataFrame,
         config: BacktestConfig | None = None,
+        step: int = 1,
     ) -> BacktestResult:
         if config is None:
             config = BacktestConfig()
@@ -71,7 +72,7 @@ class Backtester:
                 trades_skipped=0,
             )
 
-        for i in range(lookback, len(df)):
+        for i in range(lookback, len(df), step):
             window = df.iloc[i - lookback : i + 1]
             current_price = df["close"].iloc[i]
             current_time = df.index[i]
@@ -161,7 +162,7 @@ class Backtester:
                 pair=pair,
                 min_confidence=conf,
             )
-            result = self.run(df, config)
+            result = self.run(df, config, step=5)
             results.append(result)
 
         results.sort(key=lambda r: r.stats.get("total_pnl", 0), reverse=True)
