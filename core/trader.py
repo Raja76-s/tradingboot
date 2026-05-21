@@ -68,7 +68,7 @@ class PaperTrader:
         for signal in signals:
             if signal.action == "HOLD":
                 continue
-            if signal.confidence < self.config.strategy.min_confidence:
+            if signal.confidence < self.config.strategy.min_confidence_score:
                 continue
 
             can_open, reason = self.risk_manager.can_open_position()
@@ -204,7 +204,7 @@ class LiveTrader:
         for signal in signals:
             if signal.action == "HOLD":
                 continue
-            if signal.confidence < self.config.strategy.min_confidence:
+            if signal.confidence < self.config.strategy.min_confidence_score:
                 continue
 
             can_open, reason = self.risk_manager.can_open_position()

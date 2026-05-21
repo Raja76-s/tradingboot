@@ -75,7 +75,7 @@ class SignalGenerator:
         print(f"\n{Fore.CYAN}Starting Signal Generator...{Style.RESET_ALL}")
         print(f"Pairs: {', '.join(self.config.trading.trading_pairs)}")
         print(f"Scan interval: {interval_seconds}s")
-        print(f"Min confidence: {self.config.strategy.min_confidence}")
+        print(f"Min confidence: {self.config.strategy.min_confidence_score}")
         print("-" * 60)
 
         while True:
@@ -84,7 +84,7 @@ class SignalGenerator:
                 actionable = [
                     s for s in signals
                     if s.action != "HOLD"
-                    and s.confidence >= self.config.strategy.min_confidence
+                    and s.confidence >= self.config.strategy.min_confidence_score
                 ]
 
                 if actionable:
