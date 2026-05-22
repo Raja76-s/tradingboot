@@ -166,9 +166,21 @@ class DataFetcher:
         "1M": "1M",
     }
 
+    # CoinDCX uses "B-BTC_USDT" format for spot pairs
+    @staticmethod
+    def _to_coindcx_pair(pair: str) -> str:
+        """Convert BTCUSDT → B-BTC_USDT (CoinDCX spot format)."""
+        pair = pair.upper().replace("-", "").replace("_", "")
+        for quote in ("USDT", "BTC", "ETH", "INR", "USD"):
+            if pair.endswith(quote):
+                base = pair[: -len(quote)]
+                return f"B-{base}_{quote}"
+        return pair
+
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.client = CoinDCXClient(config)
+        self.last_data_source: str = "unknown"  # track where data came from
 
     def fetch_ohlcv(
         self,
@@ -176,18 +188,21 @@ class DataFetcher:
         interval: str = "15m",
         limit: int = 500,
     ) -> pd.DataFrame:
+        coindcx_pair = self._to_coindcx_pair(pair)
         try:
             raw = self.client.get_candles(
-                pair=pair,
+                pair=coindcx_pair,
                 interval=self.INTERVAL_MAP.get(interval, interval),
                 limit=limit,
             )
-            if raw:
+            if raw and len(raw) >= 10:
+                self.last_data_source = "CoinDCX"
                 return self._parse_candles(raw)
         except Exception:
             pass
 
-        return self._fetch_from_binance(pair, interval, limit)
+        df = self._fetch_from_binance(pair, interval, limit)
+        return df
 
     def _parse_candles(self, raw: list[dict[str, Any]]) -> pd.DataFrame:
         df = pd.DataFrame(raw)
@@ -215,20 +230,20 @@ class DataFetcher:
         interval: str,
         limit: int,
     ) -> pd.DataFrame:
-        """Fallback: fetch from public crypto APIs."""
+        """Fallback: fetch from public Binance API."""
         symbol = pair.replace("_", "").replace("/", "").upper()
 
-        # Try Binance first
         try:
             url = "https://api.binance.com/api/v3/klines"
             params = {"symbol": symbol, "interval": interval, "limit": limit}
             resp = requests.get(url, params=params, timeout=30)
             resp.raise_for_status()
             data = resp.json()
+            if not data:
+                raise ValueError("empty")
+            self.last_data_source = "Binance"
         except Exception:
-            # Fallback to CryptoCompare
             return self._fetch_from_cryptocompare(symbol, interval, limit)
-
 
         df = pd.DataFrame(
             data,
@@ -290,6 +305,7 @@ class DataFetcher:
         }
         endpoint, aggregate = interval_map.get(interval, ("histominute", 15))
 
+        self.last_data_source = "CryptoCompare"
         url = f"https://min-api.cryptocompare.com/data/v2/{endpoint}"
         params = {
             "fsym": base,
@@ -302,6 +318,7 @@ class DataFetcher:
         data = resp.json()
 
         if data.get("Response") == "Error" or "Data" not in data.get("Data", {}):
+            self.last_data_source = "SAMPLE (no live data!)"
             return self.generate_sample_data(limit)
 
         records = data["Data"]["Data"]

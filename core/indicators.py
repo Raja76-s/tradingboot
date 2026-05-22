@@ -556,7 +556,7 @@ class IndicatorEngine:
             name="Golden/Death Cross (50/200)",
             signal=signal,
             value=ema50 - ema200,
-            weight=2.0,
+            weight=3.0,  # Highest weight — the most reliable long-term signal
             details=f"EMA50={ema50:.2f}, EMA200={ema200:.2f}",
         ))
 
@@ -572,8 +572,8 @@ class IndicatorEngine:
             name="Price vs EMA200",
             signal=signal,
             value=close - ema200,
-            weight=1.0,
-            details=f"Close={close:.2f}, EMA200={ema200:.2f}",
+            weight=2.0,  # Strong filter — never fight the 200 EMA
+            details=f"Close={close:.2f}, EMA200={ema200:.2f} ({'ABOVE ↑' if close > ema200 else 'BELOW ↓'})",
         ))
 
         # Supertrend
@@ -627,8 +627,8 @@ class IndicatorEngine:
             name="Ichimoku Cloud",
             signal=signal,
             value=close - cloud_top,
-            weight=2.0,
-            details=f"Price vs Cloud: {'Above' if close > cloud_top else 'Below' if close < cloud_bottom else 'Inside'}",
+            weight=2.5,
+            details=f"Price vs Cloud: {'Above ↑' if close > cloud_top else 'Below ↓' if close < cloud_bottom else 'Inside (wait)'}",
         ))
 
         # Parabolic SAR
@@ -755,7 +755,7 @@ class IndicatorEngine:
             name="RSI",
             signal=signal,
             value=rsi_val,
-            weight=1.5,
+            weight=2.0,
             details=f"RSI={rsi_val:.1f}{divergence}",
         ))
 
@@ -808,7 +808,7 @@ class IndicatorEngine:
             name="MACD",
             signal=signal,
             value=macd_hist,
-            weight=1.5,
+            weight=2.0,
             details=f"MACD={macd_val:.4f}, Signal={macd_signal:.4f}, Hist={macd_hist:.4f}",
         ))
 

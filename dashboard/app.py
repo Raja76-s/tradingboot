@@ -9,6 +9,7 @@ Displays:
 - Equity curve chart
 """
 
+import requests
 from datetime import datetime
 
 from flask import Flask, jsonify, render_template, request
@@ -17,6 +18,7 @@ from config.settings import get_config
 from core.data_fetcher import DataFetcher
 from core.scoring_engine import TradeSignal
 from core.signal_generator import SignalGenerator
+from notifications.telegram_bot import TelegramNotifier
 from strategies.coin_strategies import COIN_PROFILES
 
 app = Flask(__name__)
@@ -28,6 +30,29 @@ data_fetcher = DataFetcher(config)
 # In-memory state
 trade_history: list[dict] = []
 paper_stats: dict = {}
+
+TRACKED_PAIRS = config.trading.trading_pairs
+
+
+@app.route("/api/live-prices")
+def live_prices():
+    """Fetch real-time prices from Binance ticker (no API key needed)."""
+    symbols = [p.replace("_", "").upper() for p in TRACKED_PAIRS]
+    try:
+        resp = requests.get(
+            "https://api.binance.com/api/v3/ticker/price",
+            timeout=5,
+        )
+        resp.raise_for_status()
+        all_prices = {item["symbol"]: float(item["price"]) for item in resp.json()}
+        prices = {
+            sym: all_prices[sym]
+            for sym in symbols
+            if sym in all_prices
+        }
+        return jsonify({"prices": prices, "source": "Binance", "ts": datetime.now().isoformat()})
+    except Exception as e:
+        return jsonify({"prices": {}, "source": "error", "error": str(e)})
 
 
 @app.route("/")
@@ -104,6 +129,50 @@ def get_coins():
     return jsonify({"coins": coins})
 
 
+@app.route("/api/data-source")
+def data_source():
+    """Show where market data is actually coming from."""
+    src = data_fetcher.last_data_source
+    ok = src in ("CoinDCX", "Binance")
+    return jsonify({
+        "source": src if src != "unknown" else "Not fetched yet",
+        "is_live": ok,
+        "warning": None if ok else "Using FAKE sample data! Signals are not real.",
+    })
+
+
+@app.route("/api/telegram/status")
+def telegram_status():
+    cfg = config.telegram
+    return jsonify({
+        "enabled": cfg.enabled,
+        "bot_token_set": bool(cfg.bot_token and cfg.bot_token != "your_bot_token_here"),
+        "chat_id_set": bool(cfg.chat_id and cfg.chat_id != "your_chat_id_here"),
+        "bot_token_preview": (cfg.bot_token[:10] + "...") if cfg.bot_token else "",
+        "chat_id": cfg.chat_id if cfg.chat_id else "",
+    })
+
+
+@app.route("/api/telegram/test", methods=["POST"])
+def telegram_test():
+    cfg = config.telegram
+    if not cfg.bot_token or cfg.bot_token == "your_bot_token_here":
+        return jsonify({"success": False, "error": "TELEGRAM_BOT_TOKEN not set in .env file"})
+    if not cfg.chat_id or cfg.chat_id == "your_chat_id_here":
+        return jsonify({"success": False, "error": "TELEGRAM_CHAT_ID not set in .env file"})
+
+    notifier = TelegramNotifier(cfg)
+    ok = notifier.send_message(
+        "✅ <b>CryptoTrader Pro — Test Message</b>\n\n"
+        "🎉 Telegram notifications are working!\n"
+        "You will now receive trading signals here."
+    )
+    if ok:
+        return jsonify({"success": True, "message": "Test message sent! Check your Telegram."})
+    else:
+        return jsonify({"success": False, "error": "Message failed. Check your bot token and chat ID."})
+
+
 @app.route("/api/stats")
 def get_stats():
     return jsonify(paper_stats)
@@ -119,10 +188,13 @@ def _signal_to_dict(signal: TradeSignal) -> dict:
         "pair": signal.pair,
         "action": signal.action,
         "confidence": signal.confidence,
-        "entry_price": round(signal.entry_price, 2),
-        "stop_loss": round(signal.stop_loss, 2),
-        "take_profit_1": round(signal.take_profit_1, 2),
-        "take_profit_2": round(signal.take_profit_2, 2),
+        "quality_score": signal.quality_score,
+        "grade": signal.grade,
+        "stop_loss_pct": signal.stop_loss_pct,
+        "entry_price": round(signal.entry_price, 4),
+        "stop_loss": round(signal.stop_loss, 4),
+        "take_profit_1": round(signal.take_profit_1, 4),
+        "take_profit_2": round(signal.take_profit_2, 4),
         "risk_reward": signal.risk_reward_ratio,
         "buy_count": signal.buy_count,
         "sell_count": signal.sell_count,

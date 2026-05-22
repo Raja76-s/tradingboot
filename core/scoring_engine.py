@@ -35,6 +35,9 @@ class TradeSignal:
     neutral_count: int = 0
     strong_buy_count: int = 0
     strong_sell_count: int = 0
+    quality_score: float = 0.0   # final rank: confidence + RR + volume
+    stop_loss_pct: float = 0.0   # how far stop is from entry (%)
+    grade: str = ""              # A / B / C / SKIP
 
 
 SIGNAL_SCORES = {
@@ -43,6 +46,16 @@ SIGNAL_SCORES = {
     Signal.NEUTRAL: 0.0,
     Signal.SELL: -1.0,
     Signal.STRONG_SELL: -2.0,
+}
+
+# High-weight indicators that must agree for a CONFIRMED signal
+# If these disagree, confidence is penalised heavily
+CORE_INDICATORS = {
+    "Golden/Death Cross (50/200)",
+    "MACD",
+    "RSI",
+    "Supertrend",
+    "Ichimoku Cloud",
 }
 
 
@@ -72,6 +85,10 @@ class ScoringEngine:
         strong_buy_count = 0
         strong_sell_count = 0
 
+        core_buy = 0
+        core_sell = 0
+        core_seen = 0
+
         for result in indicator_results:
             score = SIGNAL_SCORES[result.signal]
             weighted_score += score * result.weight
@@ -87,6 +104,13 @@ class ScoringEngine:
                 strong_sell_count += 1
             else:
                 neutral_count += 1
+
+            if result.name in CORE_INDICATORS:
+                core_seen += 1
+                if result.signal in (Signal.BUY, Signal.STRONG_BUY):
+                    core_buy += 1
+                elif result.signal in (Signal.SELL, Signal.STRONG_SELL):
+                    core_sell += 1
 
         for pattern in pattern_results:
             p_score = SIGNAL_SCORES[pattern.signal] * pattern.confidence
@@ -113,28 +137,82 @@ class ScoringEngine:
         # Convert -2..+2 range to 0..100 confidence
         confidence = int(min(100, max(0, (normalized + 2) * 25)))
 
+        # --- Core Confluence Filter ---
+        # If fewer than 3 of the 5 core indicators agree, cap confidence at 55
+        # This prevents weak signals from reaching the BUY/SELL threshold
+        if core_seen >= 3:
+            dominant_core = max(core_buy, core_sell)
+            if dominant_core < 3:
+                confidence = min(confidence, 55)  # not enough agreement → HOLD
+            elif dominant_core == core_seen:  # all core agree → bonus
+                confidence = min(100, confidence + 8)
+
+        # Volume confirmation: if volume spike > 1.5x average, boost by 5
+        vol_spike = next(
+            (r for r in indicator_results if r.name == "Volume Spike"), None
+        )
+        if vol_spike and vol_spike.value >= 1.5:
+            confidence = min(100, confidence + 5)
+
         current_price = df["close"].iloc[-1]
         atr_val = self._calculate_atr(df)
 
         if confidence >= 60:
             action = "BUY"
-            stop_loss = current_price - (atr_val * 2)
-            tp1 = current_price + (atr_val * 2)
-            tp2 = current_price + (atr_val * 4)
+            # Stop = recent swing low (last 20 candles) or 1.5x ATR, whichever is tighter
+            swing_low  = df["low"].rolling(20).min().iloc[-1]
+            stop_loss  = max(swing_low, current_price - atr_val * 1.5)
+            # Target = next resistance (recent swing high) or 3x ATR minimum
+            swing_high = df["high"].rolling(20).max().iloc[-1]
+            tp1 = max(current_price + atr_val * 2.0, swing_high * 0.995)
+            tp2 = current_price + (current_price - stop_loss) * 3.0  # 1:3 RR
         elif confidence <= 40:
             action = "SELL"
-            stop_loss = current_price + (atr_val * 2)
-            tp1 = current_price - (atr_val * 2)
-            tp2 = current_price - (atr_val * 4)
+            swing_high = df["high"].rolling(20).max().iloc[-1]
+            stop_loss  = min(swing_high, current_price + atr_val * 1.5)
+            swing_low  = df["low"].rolling(20).min().iloc[-1]
+            tp1 = min(current_price - atr_val * 2.0, swing_low * 1.005)
+            tp2 = current_price - (stop_loss - current_price) * 3.0
         else:
             action = "HOLD"
-            stop_loss = current_price - (atr_val * 1.5)
-            tp1 = current_price + (atr_val * 1.5)
-            tp2 = current_price + (atr_val * 3)
+            stop_loss = current_price - atr_val * 1.5
+            tp1 = current_price + atr_val * 2.0
+            tp2 = current_price + atr_val * 4.0
 
-        risk = abs(current_price - stop_loss)
+        risk   = abs(current_price - stop_loss)
         reward = abs(tp1 - current_price)
-        rr_ratio = reward / risk if risk > 0 else 0
+        rr_ratio = round(reward / risk, 2) if risk > 0 else 0.0
+
+        sl_pct = round((risk / current_price * 100), 2) if current_price > 0 else 0.0
+
+        # Quality score — based on ACTUAL computed values
+        # RR bonus: real reward vs real risk
+        if rr_ratio >= 3.0:    rr_bonus = 30.0
+        elif rr_ratio >= 2.0:  rr_bonus = 20.0
+        elif rr_ratio >= 1.5:  rr_bonus = 10.0
+        else:                  rr_bonus = 0.0
+
+        # Volume bonus
+        vol_bonus = 0.0
+        if vol_spike and vol_spike.value >= 2.0:   vol_bonus = 10.0
+        elif vol_spike and vol_spike.value >= 1.5: vol_bonus = 5.0
+
+        # Pattern bonus
+        pattern_bonus = min(10.0, len(pattern_results) * 5.0)
+
+        # Stop loss penalty — if SL > 3% away, trade is too risky
+        sl_penalty = max(0.0, (sl_pct - 3.0) * 3.0)
+
+        quality = round(
+            max(0.0, min(100.0,
+                (confidence * 0.5) + rr_bonus + vol_bonus + pattern_bonus - sl_penalty
+            )), 1
+        )
+
+        if quality >= 70 and confidence >= 65:    grade = "A"
+        elif quality >= 55 and confidence >= 60:  grade = "B"
+        elif quality >= 40 and confidence >= 55:  grade = "C"
+        else:                                      grade = "SKIP"
 
         total_signals = (
             buy_count + sell_count + neutral_count
@@ -165,6 +243,9 @@ class ScoringEngine:
             neutral_count=neutral_count,
             strong_buy_count=strong_buy_count,
             strong_sell_count=strong_sell_count,
+            quality_score=quality,
+            stop_loss_pct=round(sl_pct, 2),
+            grade=grade,
         )
 
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:

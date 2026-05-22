@@ -56,7 +56,7 @@ class RiskConfig:
 
 @dataclass
 class StrategyConfig:
-    min_confidence_score: int = 70
+    min_confidence_score: int = 62  # Balanced — fires on good setups without too much noise
     timeframes: list[str] = field(
         default_factory=lambda: ["1m", "5m", "15m", "1h", "4h", "1d"]
     )

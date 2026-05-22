@@ -63,7 +63,7 @@ class SignalGenerator:
                 print(f"Error scanning {pair}: {e}")
                 continue
 
-        signals.sort(key=lambda s: s.confidence, reverse=True)
+        signals.sort(key=lambda s: s.quality_score, reverse=True)
         return signals
 
     def run_continuous(
@@ -97,9 +97,16 @@ class SignalGenerator:
                     if callback and callable(callback):
                         callback(actionable)
                 else:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] No actionable signals. "
-                          f"Best: {signals[0].pair} ({signals[0].confidence}/100) "
-                          if signals else "No data")
+                    best = signals[0] if signals else None
+                    if best:
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] No actionable signals. "
+                              f"Best: {best.pair} "
+                              f"conf={best.confidence}/100 "
+                              f"RR=1:{best.risk_reward_ratio} "
+                              f"SL={best.stop_loss_pct}% "
+                              f"grade={best.grade}")
+                    else:
+                        print("No data")
 
                 time.sleep(interval_seconds)
 
@@ -113,55 +120,78 @@ class SignalGenerator:
     def _print_signal(self, signal: TradeSignal) -> None:
         color = Fore.GREEN if signal.action == "BUY" else Fore.RED
         arrow = "▲" if signal.action == "BUY" else "▼"
+        grade_color = Fore.GREEN if signal.grade == "A" else Fore.YELLOW if signal.grade == "B" else Fore.WHITE
 
-        print(f"\n{color}{'=' * 50}")
-        print(f"{arrow} {signal.action} Signal — {signal.pair}")
-        print(f"{'=' * 50}{Style.RESET_ALL}")
-        print(f"  Confidence: {signal.confidence}/100")
-        print(f"  Entry Price: {signal.entry_price:,.2f}")
-        print(f"  Stop-Loss: {signal.stop_loss:,.2f}")
-        print(f"  Target 1: {signal.take_profit_1:,.2f}")
-        print(f"  Target 2: {signal.take_profit_2:,.2f}")
-        print(f"  Risk/Reward: 1:{signal.risk_reward_ratio}")
-        print(f"  Buy Signals: {signal.buy_count} | Sell Signals: {signal.sell_count}")
-
+        print(f"\n{color}{'=' * 55}")
+        print(f"{arrow} {signal.action}  {signal.pair}  "
+              f"{grade_color}[Grade: {signal.grade}  Quality: {signal.quality_score}/100]{color}")
+        print(f"{'=' * 55}{Style.RESET_ALL}")
+        print(f"  Confidence : {signal.confidence}/100")
+        print(f"  Entry      : {signal.entry_price:,.4f}")
+        print(f"  Stop-Loss  : {signal.stop_loss:,.4f}  (-{signal.stop_loss_pct}%)  ← MAX LOSS")
+        print(f"  Target 1   : {signal.take_profit_1:,.4f}")
+        print(f"  Target 2   : {signal.take_profit_2:,.4f}")
+        print(f"  Risk/Reward: 1:{signal.risk_reward_ratio}  "
+              f"({'GOOD' if signal.risk_reward_ratio >= 2 else 'OK' if signal.risk_reward_ratio >= 1.5 else 'WEAK'})")
+        print(f"  Buy/Sell   : {signal.buy_count} buy | {signal.sell_count} sell | {signal.neutral_count} neutral")
         if signal.pattern_signals:
-            print(f"  Patterns: {', '.join(p.name for p in signal.pattern_signals)}")
-
+            print(f"  Patterns   : {', '.join(p.name for p in signal.pattern_signals)}")
         print()
 
     @staticmethod
     def format_telegram_message(signal: TradeSignal) -> str:
-        emoji = "🟢" if signal.action == "BUY" else "🔴" if signal.action == "SELL" else "⚪"
+        emoji = "🟢" if signal.action == "BUY" else "🔴"
+        grade = (
+            "⭐⭐⭐ STRONG" if signal.confidence >= 85
+            else "⭐⭐ GOOD" if signal.confidence >= 75
+            else "⭐ MODERATE"
+        )
 
-        msg_lines = [
-            f"{emoji} {signal.action} Signal — {signal.pair}",
-            "",
-            f"Confidence: {signal.confidence}/100",
-            f"Entry Price: {signal.entry_price:,.2f}",
-            f"Stop-Loss: {signal.stop_loss:,.2f}",
-            f"Target 1: {signal.take_profit_1:,.2f}",
-            f"Target 2: {signal.take_profit_2:,.2f}",
-            f"Risk/Reward: 1:{signal.risk_reward_ratio}",
-            "",
-            f"Indicators: {signal.buy_count} Buy | {signal.sell_count} Sell",
-        ]
+        # Risk % from entry to stop
+        if signal.entry_price > 0 and signal.stop_loss > 0:
+            risk_pct = abs(signal.entry_price - signal.stop_loss) / signal.entry_price * 100
+            reward_pct = abs(signal.take_profit_1 - signal.entry_price) / signal.entry_price * 100
+        else:
+            risk_pct = reward_pct = 0
 
-        if signal.pattern_signals:
-            msg_lines.append(
-                f"Patterns: {', '.join(p.name for p in signal.pattern_signals)}"
-            )
-
-        key_indicators = [
+        core_signals = [
             i for i in signal.indicator_signals
-            if i.signal.value in ("STRONG_BUY", "STRONG_SELL")
+            if i.name in (
+                "Golden/Death Cross (50/200)", "MACD", "RSI",
+                "Supertrend", "Ichimoku Cloud"
+            )
         ]
-        if key_indicators:
-            msg_lines.append("\nKey Signals:")
-            for ind in key_indicators[:5]:
-                msg_lines.append(f"  {ind.name}: {ind.details}")
+        core_lines = "\n".join(
+            f"  • {i.name}: {i.signal.value} — {i.details}"
+            for i in core_signals
+        )
 
-        msg_lines.append(f"\nTimeframe: {signal.timeframe}")
-        msg_lines.append(f"Time: {signal.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        pattern_line = ""
+        if signal.pattern_signals:
+            names = ", ".join(p.name for p in signal.pattern_signals)
+            pattern_line = f"\n📊 <b>Patterns:</b> {names}"
 
-        return "\n".join(msg_lines)
+        lines = [
+            f"{emoji} <b>{signal.action} — {signal.pair}</b>  {grade}",
+            f"━━━━━━━━━━━━━━━━━━━━",
+            f"🎯 <b>Confidence:</b> {signal.confidence}/100",
+            f"⏱ <b>Timeframe:</b> {signal.timeframe}",
+            f"",
+            f"💰 <b>Entry:</b>  {signal.entry_price:,.4f}",
+            f"🛑 <b>Stop-Loss:</b>  {signal.stop_loss:,.4f}  (-{risk_pct:.1f}%)",
+            f"🎯 <b>Target 1:</b>  {signal.take_profit_1:,.4f}  (+{reward_pct:.1f}%)",
+            f"🚀 <b>Target 2:</b>  {signal.take_profit_2:,.4f}  (+{reward_pct*2:.1f}%)",
+            f"⚖️ <b>Risk/Reward:</b>  1:{signal.risk_reward_ratio}",
+            f"",
+            f"📈 <b>Indicators:</b> {signal.buy_count} Buy | {signal.sell_count} Sell | {signal.neutral_count} Neutral",
+            f"<b>Core Signals:</b>",
+            core_lines,
+        ]
+        if pattern_line:
+            lines.append(pattern_line)
+        lines += [
+            f"",
+            f"⚠️ Always use stop-loss. Risk max 1-2% of capital.",
+            f"🕐 {signal.timestamp.strftime('%d %b %Y  %H:%M:%S')}",
+        ]
+        return "\n".join(lines)

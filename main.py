@@ -202,20 +202,41 @@ def cmd_coins() -> None:
 
 def cmd_telegram_test() -> None:
     config = get_config()
-    if not config.telegram.enabled:
-        print(f"{Fore.RED}Telegram not configured.{Style.RESET_ALL}")
-        print("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID environment variables.")
-        print("\nSetup steps:")
-        print("1. Message @BotFather on Telegram to create a bot")
-        print("2. Copy the bot token")
-        print("3. Message @userinfobot to get your chat ID")
+    t = config.telegram
+
+    print(f"\n{Fore.CYAN}=== Telegram Diagnostics ==={Style.RESET_ALL}")
+    print(f"  .env file loaded: {Fore.GREEN}YES{Style.RESET_ALL}")
+
+    token_ok = bool(t.bot_token and t.bot_token != "your_bot_token_here")
+    chat_ok = bool(t.chat_id and t.chat_id != "your_chat_id_here")
+
+    print(f"  TELEGRAM_BOT_TOKEN: {Fore.GREEN + t.bot_token[:15] + '...' + Style.RESET_ALL if token_ok else Fore.RED + 'NOT SET' + Style.RESET_ALL}")
+    print(f"  TELEGRAM_CHAT_ID:   {Fore.GREEN + t.chat_id + Style.RESET_ALL if chat_ok else Fore.RED + 'NOT SET' + Style.RESET_ALL}")
+
+    if not token_ok:
+        print(f"\n{Fore.RED}Fix: Open .env and set TELEGRAM_BOT_TOKEN{Style.RESET_ALL}")
+        print("  1. Message @BotFather on Telegram → /newbot")
+        print("  2. Copy the token it gives you")
+        print("  3. Paste into .env: TELEGRAM_BOT_TOKEN=1234567890:ABCdef...")
+    if not chat_ok:
+        print(f"\n{Fore.RED}Fix: Open .env and set TELEGRAM_CHAT_ID{Style.RESET_ALL}")
+        print("  1. Message @userinfobot on Telegram")
+        print("  2. It will reply with your ID (a number like 123456789)")
+        print("  3. Paste into .env: TELEGRAM_CHAT_ID=123456789")
+
+    if not (token_ok and chat_ok):
         return
 
-    notifier = TelegramNotifier(config.telegram)
-    if notifier.test_connection():
-        print(f"{Fore.GREEN}Telegram connection successful!{Style.RESET_ALL}")
+    print(f"\n{Fore.YELLOW}Sending test message...{Style.RESET_ALL}")
+    notifier = TelegramNotifier(t)
+    if notifier.send_message(
+        "\u2705 <b>CryptoTrader Pro \u2014 Test Message</b>\n\n"
+        "\U0001f389 Telegram notifications are working!\n"
+        "You will now receive trading signals here."
+    ):
+        print(f"{Fore.GREEN}\u2713 Test message sent! Check your Telegram now.{Style.RESET_ALL}")
     else:
-        print(f"{Fore.RED}Telegram connection failed.{Style.RESET_ALL}")
+        print(f"{Fore.RED}\u2717 Send failed. Verify your token and chat ID are correct.{Style.RESET_ALL}")
 
 
 def main() -> None:

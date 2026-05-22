@@ -105,6 +105,51 @@
         .indicator-signal.STRONG_BUY, .indicator-signal.BUY { color: #3fb950; }
         .indicator-signal.STRONG_SELL, .indicator-signal.SELL { color: #f85149; }
         .indicator-signal.NEUTRAL { color: #d29922; }
+        .tg-panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .tg-panel h3 { color: #58a6ff; margin-bottom: 12px; font-size: 16px; }
+        .tg-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+        .tg-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .tg-badge.ok { background: #238636; color: #fff; }
+        .tg-badge.fail { background: #da3633; color: #fff; }
+        .tg-badge.warn { background: #9e6a03; color: #fff; }
+        .tg-msg { font-size: 13px; padding: 10px 14px; border-radius: 6px; margin-top: 8px; }
+        .tg-msg.success { background: #0d2818; border: 1px solid #238636; color: #3fb950; }
+        .tg-msg.error { background: #2d0f0f; border: 1px solid #da3633; color: #f85149; }
+        .btn-tg { background: #1d6fa4; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .btn-tg:hover { background: #2188c9; }
+        .btn-tg:disabled { opacity: 0.5; cursor: not-allowed; }
+        .setup-steps { font-size: 12px; color: #8b949e; margin-top: 10px; line-height: 1.8; }
+        .setup-steps a { color: #58a6ff; }
+        /* Live price ticker */
+        .price-ticker {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        .ticker-label { font-size: 11px; color: #8b949e; margin-right: 4px; }
+        .ticker-item {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 5px 12px;
+            font-size: 13px;
+            min-width: 130px;
+        }
+        .ticker-item .t-pair { color: #58a6ff; font-weight: bold; font-size: 11px; }
+        .ticker-item .t-price { color: #f0f6fc; font-weight: bold; }
+        .ticker-item .t-change { font-size: 11px; }
+        .ticker-item .t-change.up { color: #3fb950; }
+        .ticker-item .t-change.down { color: #f85149; }
+        .ticker-dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950;
+            display: inline-block; margin-right: 6px;
+            animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @media (max-width: 768px) {
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
             .grid { grid-template-columns: 1fr; }
@@ -114,7 +159,8 @@
 <body>
     <div class="header">
         <h1>CryptoTrader Pro</h1>
-        <div>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span id="dataSourceBadge" style="font-size:12px;padding:3px 10px;border-radius:12px;background:#21262d;color:#8b949e;">Data: checking...</span>
             <span class="status" id="status">Ready</span>
             <button class="btn" id="scanBtn" onclick="scanMarkets()">Scan Markets</button>
         </div>
@@ -140,6 +186,36 @@
             </div>
         </div>
 
+        <!-- Live Price Ticker -->
+        <div class="price-ticker" id="priceTicker">
+            <span><span class="ticker-dot"></span><span class="ticker-label">LIVE PRICES</span></span>
+            <span style="font-size:12px; color:#8b949e;" id="tickerStatus">Loading...</span>
+        </div>
+
+        <!-- Telegram Panel -->
+        <div class="tg-panel" id="tgPanel">
+            <h3>📱 Telegram Notifications</h3>
+            <div class="tg-row">
+                <span>Bot Token:</span>
+                <span class="tg-badge" id="tgTokenBadge">checking...</span>
+                <span>Chat ID:</span>
+                <span class="tg-badge" id="tgChatBadge">checking...</span>
+                <span>Status:</span>
+                <span class="tg-badge" id="tgEnabledBadge">checking...</span>
+                <button class="btn-tg" id="tgTestBtn" onclick="testTelegram()" disabled>Send Test Message</button>
+            </div>
+            <div id="tgResult"></div>
+            <div class="setup-steps" id="tgSetupSteps" style="display:none">
+                <b>How to set up Telegram:</b><br>
+                1. Open Telegram → message <a href="https://t.me/BotFather" target="_blank">@BotFather</a> → send <code>/newbot</code> → copy the token<br>
+                2. Message <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a> → copy your numeric ID<br>
+                3. Open <code>c:\tradingboot\.env</code> and set:<br>
+                &nbsp;&nbsp;<code>TELEGRAM_BOT_TOKEN=your_token_here</code><br>
+                &nbsp;&nbsp;<code>TELEGRAM_CHAT_ID=your_chat_id_here</code><br>
+                4. Restart the dashboard, then click "Send Test Message"
+            </div>
+        </div>
+
         <div class="grid" id="signalsGrid">
             <div class="loading">Click "Scan Markets" to analyze all pairs</div>
         </div>
@@ -151,6 +227,85 @@
     </div>
 
     <script>
+        // Load Telegram status on page load
+        async function loadTelegramStatus() {
+            try {
+                const resp = await fetch('/api/telegram/status');
+                const d = await resp.json();
+                const tokenBadge = document.getElementById('tgTokenBadge');
+                const chatBadge = document.getElementById('tgChatBadge');
+                const enabledBadge = document.getElementById('tgEnabledBadge');
+                const testBtn = document.getElementById('tgTestBtn');
+                const setupSteps = document.getElementById('tgSetupSteps');
+
+                tokenBadge.textContent = d.bot_token_set ? ('✓ ' + d.bot_token_preview) : '✗ Not Set';
+                tokenBadge.className = 'tg-badge ' + (d.bot_token_set ? 'ok' : 'fail');
+                chatBadge.textContent = d.chat_id_set ? ('✓ ' + d.chat_id) : '✗ Not Set';
+                chatBadge.className = 'tg-badge ' + (d.chat_id_set ? 'ok' : 'fail');
+                enabledBadge.textContent = d.enabled ? '✓ Ready' : '✗ Not Configured';
+                enabledBadge.className = 'tg-badge ' + (d.enabled ? 'ok' : 'fail');
+                testBtn.disabled = !d.enabled;
+                setupSteps.style.display = d.enabled ? 'none' : 'block';
+            } catch (e) {
+                document.getElementById('tgEnabledBadge').textContent = 'Error';
+            }
+        }
+
+        async function testTelegram() {
+            const btn = document.getElementById('tgTestBtn');
+            const result = document.getElementById('tgResult');
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            result.innerHTML = '';
+            try {
+                const resp = await fetch('/api/telegram/test', {method: 'POST'});
+                const d = await resp.json();
+                result.innerHTML = `<div class="tg-msg ${d.success ? 'success' : 'error'}">${d.success ? '✅ ' + d.message : '❌ ' + d.error}</div>`;
+            } catch (e) {
+                result.innerHTML = `<div class="tg-msg error">❌ Request failed: ${e.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Test Message';
+            }
+        }
+
+        loadTelegramStatus();
+
+        // ── Live Price Ticker (updates every 3 seconds) ──────────────────
+        const prevPrices = {};
+
+        async function updateLivePrices() {
+            try {
+                const resp = await fetch('/api/live-prices');
+                const d = await resp.json();
+                if (!d.prices || Object.keys(d.prices).length === 0) {
+                    document.getElementById('tickerStatus').textContent = 'Price feed unavailable';
+                    return;
+                }
+                const ticker = document.getElementById('priceTicker');
+                ticker.querySelectorAll('.ticker-item').forEach(el => el.remove());
+
+                for (const [sym, price] of Object.entries(d.prices)) {
+                    const prev = prevPrices[sym];
+                    const changeClass = prev ? (price > prev ? 'up' : price < prev ? 'down' : '') : '';
+                    const changeArrow = prev ? (price > prev ? '▲' : price < prev ? '▼' : '—') : '';
+                    prevPrices[sym] = price;
+                    const item = document.createElement('div');
+                    item.className = 'ticker-item';
+                    item.innerHTML = `<div class="t-pair">${sym}</div>
+                        <div class="t-price">${price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4})}</div>
+                        <div class="t-change ${changeClass}">${changeArrow}</div>`;
+                    ticker.appendChild(item);
+                }
+                document.getElementById('tickerStatus').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+            } catch(e) {
+                document.getElementById('tickerStatus').textContent = 'Error fetching prices';
+            }
+        }
+        updateLivePrices();
+        setInterval(updateLivePrices, 3000);
+        // ────────────────────────────────────────────────────────────────
+
         async function scanMarkets() {
             const btn = document.getElementById('scanBtn');
             const status = document.getElementById('status');
@@ -170,6 +325,14 @@
                 renderSignals(data.signals);
                 updateStats(data.signals);
                 status.textContent = 'Last scan: ' + new Date().toLocaleTimeString();
+                // refresh data source badge
+                fetch('/api/data-source').then(r=>r.json()).then(d=>{
+                    const b = document.getElementById('dataSourceBadge');
+                    b.textContent = '📡 Data: ' + d.source;
+                    b.style.background = d.is_live ? '#0d2818' : '#2d0f0f';
+                    b.style.color = d.is_live ? '#3fb950' : '#f85149';
+                    b.style.border = '1px solid ' + (d.is_live ? '#238636' : '#da3633');
+                }).catch(()=>{});
             } catch (e) {
                 alert('Scan failed: ' + e.message);
             } finally {
@@ -180,29 +343,37 @@
 
         function renderSignals(signals) {
             const grid = document.getElementById('signalsGrid');
-            grid.innerHTML = signals.map(s => `
+            grid.innerHTML = signals.map(s => {
+                const gradeColor = s.grade === 'A' ? '#3fb950' : s.grade === 'B' ? '#d29922' : '#8b949e';
+                const gradeLabel = s.grade === 'A' ? '⭐ Grade A — BEST' : s.grade === 'B' ? 'Grade B — GOOD' : s.grade === 'C' ? 'Grade C — WEAK' : 'SKIP';
+                const rrLabel = s.risk_reward >= 2 ? '✅ GOOD' : s.risk_reward >= 1.5 ? '⚠️ OK' : '❌ WEAK';
+                return `
                 <div class="card signal-card ${s.action.toLowerCase()}" onclick="showDetails('${s.pair}')">
                     <div class="signal-header">
                         <span class="pair-name">${s.pair}</span>
                         <span class="action-badge ${s.action.toLowerCase()}">${s.action}</span>
                     </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <span style="font-size:12px;font-weight:bold;color:${gradeColor};">${gradeLabel}</span>
+                        <span style="font-size:12px;color:#8b949e;">Quality: <b style="color:#f0f6fc;">${s.quality_score}/100</b></span>
+                    </div>
                     <div class="confidence-bar">
                         <div class="confidence-fill ${s.confidence >= 65 ? 'high' : s.confidence >= 45 ? 'medium' : 'low'}"
                              style="width: ${s.confidence}%"></div>
                     </div>
-                    <div style="text-align:center; font-size:14px; margin-bottom:10px;">
-                        Confidence: <strong>${s.confidence}/100</strong>
+                    <div style="text-align:center; font-size:13px; margin-bottom:10px; color:#8b949e;">
+                        Confidence: <strong style="color:#f0f6fc;">${s.confidence}/100</strong>
                     </div>
                     <div class="signal-details">
                         <div class="row"><span class="label">Entry Price</span><span class="value">${s.entry_price.toLocaleString()}</span></div>
-                        <div class="row"><span class="label">Stop-Loss</span><span class="value">${s.stop_loss.toLocaleString()}</span></div>
-                        <div class="row"><span class="label">Target 1</span><span class="value">${s.take_profit_1.toLocaleString()}</span></div>
-                        <div class="row"><span class="label">Target 2</span><span class="value">${s.take_profit_2.toLocaleString()}</span></div>
-                        <div class="row"><span class="label">Risk/Reward</span><span class="value">1:${s.risk_reward}</span></div>
-                        <div class="row"><span class="label">Buy/Sell Signals</span><span class="value">${s.buy_count}/${s.sell_count}</span></div>
+                        <div class="row"><span class="label">Stop-Loss</span><span class="value" style="color:#f85149;">${s.stop_loss.toLocaleString()} (-${s.stop_loss_pct}%)</span></div>
+                        <div class="row"><span class="label">Target 1</span><span class="value" style="color:#3fb950;">${s.take_profit_1.toLocaleString()}</span></div>
+                        <div class="row"><span class="label">Target 2</span><span class="value" style="color:#3fb950;">${s.take_profit_2.toLocaleString()}</span></div>
+                        <div class="row"><span class="label">Risk/Reward</span><span class="value">1:${s.risk_reward} ${rrLabel}</span></div>
+                        <div class="row"><span class="label">Buy/Sell</span><span class="value">${s.buy_count} buy / ${s.sell_count} sell</span></div>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         }
 
         function updateStats(signals) {
