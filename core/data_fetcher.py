@@ -30,7 +30,7 @@ class DataFetcher:
 
     def _get_coindcx_tickers(self) -> dict:
         now = time.time()
-        if now - self._cache_time < 10:
+        if now - self._cache_time < 2:
             return self._coindcx_cache
         try:
             r = requests.get(
