@@ -1,9 +1,11 @@
+import threading
 import time
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import requests
+import websocket
 
 from config.settings import AppConfig
 
@@ -19,6 +21,66 @@ OKX_INTERVAL = {
     "1h": "1H", "2h": "2H", "4h": "4H", "1d": "1D",
 }
 
+# Global real-time price store updated by WebSocket
+_live_prices: dict[str, float] = {}
+_ws_running = False
+
+
+def _start_coindcx_ws() -> None:
+    """Background thread — streams live prices from CoinDCX WebSocket."""
+    import json
+
+    def on_message(ws, message):
+        try:
+            data = json.loads(message)
+            # CoinDCX sends list of ticker updates
+            if isinstance(data, list):
+                for t in data:
+                    if "market" in t and "last_price" in t:
+                        _live_prices[t["market"]] = float(t["last_price"])
+            elif isinstance(data, dict) and "market" in data:
+                _live_prices[data["market"]] = float(data["last_price"])
+        except Exception:
+            pass
+
+    def on_error(ws, error):
+        pass
+
+    def on_close(ws, *args):
+        global _ws_running
+        _ws_running = False
+
+    def on_open(ws):
+        # Subscribe to all tickers
+        ws.send(json.dumps({"channelName": "coindcx"}))
+
+    def run():
+        global _ws_running
+        while True:
+            try:
+                _ws_running = True
+                ws = websocket.WebSocketApp(
+                    "wss://stream.coindcx.com",
+                    on_open=on_open,
+                    on_message=on_message,
+                    on_error=on_error,
+                    on_close=on_close,
+                )
+                ws.run_forever(
+                    http_proxy_host="proxy.server",
+                    http_proxy_port=3128,
+                    ping_interval=30,
+                    ping_timeout=10,
+                )
+            except Exception:
+                pass
+            _ws_running = False
+            time.sleep(5)  # reconnect after 5s
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    time.sleep(3)  # wait for first prices to arrive
+
 
 class DataFetcher:
 
@@ -27,11 +89,21 @@ class DataFetcher:
         self.last_data_source = "unknown"
         self._coindcx_cache: dict = {}
         self._cache_time: float = 0
+        # Start WebSocket in background for real-time prices
+        _start_coindcx_ws()
 
-    def _get_coindcx_tickers(self) -> dict:
+    def get_live_price(self, pair: str) -> float | None:
+        # 1st: WebSocket (real-time, no delay)
+        if pair in _live_prices:
+            return _live_prices[pair]
+        # 2nd: REST API fallback
+        return self._rest_price(pair)
+
+    def _rest_price(self, pair: str) -> float | None:
         now = time.time()
         if now - self._cache_time < 2:
-            return self._coindcx_cache
+            t = self._coindcx_cache.get(pair)
+            return float(t["last_price"]) if t else None
         try:
             r = requests.get(
                 "https://api.coindcx.com/exchange/ticker",
@@ -41,11 +113,15 @@ class DataFetcher:
             self._cache_time = now
         except Exception:
             pass
-        return self._coindcx_cache
-
-    def get_live_price(self, pair: str) -> float | None:
-        t = self._get_coindcx_tickers().get(pair)
+        t = self._coindcx_cache.get(pair)
         return float(t["last_price"]) if t else None
+
+    def _get_coindcx_tickers(self) -> dict:
+        """Used by get_all_tickers — REST fallback."""
+        if _live_prices:
+            return {k: {"last_price": v} for k, v in _live_prices.items()}
+        self._rest_price("BTCUSDT")  # trigger cache refresh
+        return self._coindcx_cache
 
     def _patch_live_price(self, df: pd.DataFrame, pair: str) -> None:
         live = self.get_live_price(pair)
