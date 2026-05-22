@@ -9,6 +9,7 @@ Setup:
   4. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars
 """
 
+import os
 import requests
 
 from config.settings import TelegramConfig
@@ -27,6 +28,18 @@ class TelegramNotifier:
         if not self.config.enabled:
             return False
 
+        # PythonAnywhere free plan requires proxy for external HTTPS
+        proxies = {}
+        pa_proxy = os.getenv("https_proxy") or os.getenv("HTTPS_PROXY")
+        if pa_proxy:
+            proxies = {"http": pa_proxy, "https": pa_proxy}
+        else:
+            # PythonAnywhere default proxy
+            proxies = {
+                "http": "http://proxy.server:3128",
+                "https": "http://proxy.server:3128",
+            }
+
         try:
             resp = requests.post(
                 f"{self.base_url}/sendMessage",
@@ -35,8 +48,11 @@ class TelegramNotifier:
                     "text": text,
                     "parse_mode": "HTML",
                 },
-                timeout=10,
+                proxies=proxies,
+                timeout=15,
             )
+            if resp.status_code != 200:
+                print(f"Telegram error {resp.status_code}: {resp.text}")
             return resp.status_code == 200
         except Exception as e:
             print(f"Telegram send failed: {e}")
