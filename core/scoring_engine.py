@@ -13,6 +13,7 @@ import pandas as pd
 from config.settings import StrategyConfig
 from core.indicators import IndicatorEngine, IndicatorResult, Signal
 from core.patterns import CandlestickPatterns, PatternResult
+from core.smc import SmartMoneyConcepts
 
 
 @dataclass
@@ -77,6 +78,7 @@ class ScoringEngine:
         self.config = config
         self.indicator_engine = IndicatorEngine(config)
         self.pattern_detector = CandlestickPatterns()
+        self.smc = SmartMoneyConcepts()
 
     def analyze(
         self,
@@ -86,10 +88,13 @@ class ScoringEngine:
     ) -> TradeSignal:
         indicator_results = self.indicator_engine.compute_all(df)
         pattern_results = self.pattern_detector.detect_all(df)
+        smc_results = self.smc.analyze(df)  # Smart Money signals
 
-        # Category-based scoring — trend/momentum/volume each get equal weight
-        # This prevents 10 trend indicators from drowning out 8 momentum indicators
-        cat_scores: dict[str, list[float]] = {"trend": [], "momentum": [], "volume": []}
+        # Merge SMC into indicator results for display
+        all_indicator_results = indicator_results + smc_results
+
+        # Category-based scoring — trend/momentum/volume/smc each get equal weight
+        cat_scores: dict[str, list[float]] = {"trend": [], "momentum": [], "volume": [], "smc": []}
 
         buy_count = 0
         sell_count = 0
@@ -100,10 +105,12 @@ class ScoringEngine:
         core_sell = 0
         core_seen = 0
 
-        for result in indicator_results:
+        for result in all_indicator_results:
             score = SIGNAL_SCORES[result.signal]
 
-            if result.name in TREND_INDICATORS:
+            if result.name.startswith("SMC:"):
+                cat_scores["smc"].append(score * result.weight)
+            elif result.name in TREND_INDICATORS:
                 cat_scores["trend"].append(score * result.weight)
             elif result.name in MOMENTUM_INDICATORS:
                 cat_scores["momentum"].append(score * result.weight)
@@ -118,7 +125,7 @@ class ScoringEngine:
 
             if result.name in CORE_INDICATORS:
                 core_seen += 1
-                if result.signal in (Signal.BUY, Signal.STRONG_BUY):   core_buy += 1
+                if result.signal in (Signal.BUY, Signal.STRONG_BUY):    core_buy += 1
                 elif result.signal in (Signal.SELL, Signal.STRONG_SELL): core_sell += 1
 
         # Average each category separately then combine equally
@@ -227,14 +234,11 @@ class ScoringEngine:
         elif quality >= 40 and confidence >= 55:  grade = "C"
         else:                                      grade = "SKIP"
 
-        total_signals = (
-            buy_count + sell_count + neutral_count
-            + strong_buy_count + strong_sell_count
-        )
         summary = self._build_summary(
             action, confidence, buy_count, sell_count, neutral_count,
-            strong_buy_count, strong_sell_count, total_signals,
-            indicator_results, pattern_results,
+            strong_buy_count, strong_sell_count,
+            buy_count + sell_count + neutral_count + strong_buy_count + strong_sell_count,
+            all_indicator_results, pattern_results,
         )
 
         return TradeSignal(
@@ -247,7 +251,7 @@ class ScoringEngine:
             take_profit_1=round(tp1, 2),
             take_profit_2=round(tp2, 2),
             risk_reward_ratio=round(rr_ratio, 2),
-            indicator_signals=indicator_results,
+            indicator_signals=all_indicator_results,
             pattern_signals=pattern_results,
             timeframe=timeframe,
             summary=summary,
