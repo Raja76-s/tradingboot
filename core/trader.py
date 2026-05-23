@@ -11,9 +11,51 @@ from datetime import datetime
 from colorama import Fore, Style
 
 from config.settings import AppConfig
-from core.data_fetcher import CoinDCXClient, DataFetcher
+from core.data_fetcher import DataFetcher
 from core.risk_manager import Position, RiskManager, TradeRecord
 from core.signal_generator import SignalGenerator
+
+
+class CoinDCXClient:
+    """Minimal CoinDCX client for live trading orders."""
+
+    def __init__(self, config: AppConfig) -> None:
+        import hashlib, hmac, json, time
+        import requests
+        self.config = config
+        self._requests = requests
+        self._hmac = hmac
+        self._hashlib = hashlib
+        self._json = json
+        self._time = time
+        self.base_url = config.coindcx.base_url
+        from core.data_fetcher import PROXIES
+        self.proxies = PROXIES
+
+    def _sign(self, body: dict) -> dict:
+        body_str = self._json.dumps(body, separators=(",", ":"))
+        sig = self._hmac.new(
+            self.config.coindcx.api_secret.encode(),
+            body_str.encode(), self._hashlib.sha256
+        ).hexdigest()
+        return {"X-AUTH-APIKEY": self.config.coindcx.api_key, "X-AUTH-SIGNATURE": sig}
+
+    def get_balances(self) -> list:
+        body = {"timestamp": int(self._time.time() * 1000)}
+        r = self._requests.post(f"{self.base_url}/exchange/v1/users/balances",
+            json=body, headers=self._sign(body), proxies=self.proxies, timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def place_order(self, pair, side, order_type, quantity, price=None) -> dict:
+        body = {"side": side, "order_type": order_type, "market": pair,
+                "total_quantity": quantity, "timestamp": int(self._time.time() * 1000)}
+        if price:
+            body["price_per_unit"] = price
+        r = self._requests.post(f"{self.base_url}/exchange/v1/orders/create",
+            json=body, headers=self._sign(body), proxies=self.proxies, timeout=10)
+        r.raise_for_status()
+        return r.json()
 
 
 class PaperTrader:
