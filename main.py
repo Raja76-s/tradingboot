@@ -69,47 +69,73 @@ def cmd_signals() -> None:
 
 def cmd_backtest(pair: str = "BTCUSDT") -> None:
     config = get_config()
-    fetcher = DataFetcher(config)
     backtester = Backtester(config)
 
-    print(f"\nFetching historical data for {pair}...")
-    try:
-        df = fetcher.fetch_ohlcv(pair, "1h", 2000)
-        if len(df) < 100:
-            print("Insufficient live data. Using sample data for demonstration.")
-            df = fetcher.generate_sample_data(500)
-    except Exception:
-        print("Could not fetch live data. Using sample data for demonstration.")
-        df = fetcher.generate_sample_data(500)
+    print(f"\nFetching real historical data for {pair} from OKX...")
 
-    print(f"Data points: {len(df)}")
-    print(f"Date range: {df.index[0]} to {df.index[-1]}")
+    import requests as req
+    symbol = pair[:-4] + "-" + pair[-4:]  # ETHUSDT -> ETH-USDT
+    proxies = {"http": "http://proxy.server:3128", "https": "http://proxy.server:3128"}
+    all_data: list = []
+    after = None
+
+    for _ in range(6):  # 6 x 300 = 1800 candles
+        url = f"https://www.okx.com/api/v5/market/history-candles?instId={symbol}&bar=1H&limit=300"
+        if after:
+            url += f"&after={after}"
+        try:
+            batch = req.get(url, proxies=proxies, timeout=15).json().get("data", [])
+        except Exception:
+            try:
+                batch = req.get(url, timeout=15).json().get("data", [])
+            except Exception:
+                batch = []
+        if not batch:
+            break
+        all_data.extend(batch)
+        after = batch[-1][0]
+
+    import pandas as pd
+    if len(all_data) >= 100:
+        rows = [{
+            "timestamp": pd.to_datetime(int(c[0]), unit="ms"),
+            "open": float(c[1]), "high": float(c[2]),
+            "low": float(c[3]), "close": float(c[4]),
+            "volume": float(c[5]),
+        } for c in all_data]
+        df = pd.DataFrame(rows).set_index("timestamp").sort_index()
+        print(f"{Fore.GREEN}Real data: {len(df)} candles from {df.index[0].date()} to {df.index[-1].date()}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.RED}Could not fetch real data. Run this on PythonAnywhere instead.{Style.RESET_ALL}")
+        print("Command: python main.py backtest ETHUSDT")
+        return
 
     bt_config = BacktestConfig(
         pair=pair,
-        timeframe="15m",
+        timeframe="1h",
         initial_balance=config.trading.initial_balance,
-        min_confidence=65,
+        min_confidence=62,
     )
 
     print("\nRunning backtest...")
     result = backtester.run(df, bt_config)
     print(backtester.print_results(result))
 
-    # Run optimization
-    print(f"\n{Fore.CYAN}Running optimization across confidence levels...{Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN}Optimization across confidence levels:{Style.RESET_ALL}")
     opt_results = backtester.run_optimization(df, pair)
-
-    print(f"\n{'Confidence':<12} {'Trades':<8} {'Win Rate':<10} {'P&L':<12} {'Return':<10}")
-    print("-" * 52)
+    print(f"\n{'Confidence':<12} {'Trades':<8} {'Win Rate':<10} {'P&L':<12} {'Return':<10} {'PF':<6}")
+    print("-" * 58)
     for r in opt_results:
         s = r.stats
+        pf = s['profit_factor']
+        color = Fore.GREEN if s['total_pnl'] > 0 else Fore.RED
         print(
-            f"{r.config.min_confidence:<12} "
+            f"{color}{r.config.min_confidence:<12} "
             f"{s['total_trades']:<8} "
             f"{s['win_rate']:<10.1f}% "
             f"{s['total_pnl']:<12,.2f} "
-            f"{s['total_pnl_pct']:<10.2f}%"
+            f"{s['total_pnl_pct']:<10.2f}% "
+            f"{pf:<6.2f}{Style.RESET_ALL}"
         )
 
 

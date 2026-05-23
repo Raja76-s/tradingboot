@@ -167,6 +167,22 @@ class ScoringEngine:
             elif dominant_core == core_seen:  # all core agree → bonus
                 confidence = min(100, confidence + 8)
 
+        # --- Higher Timeframe Trend Filter (Elder's Triple Screen) ---
+        # Only give full confidence when short-term signal agrees with long-term trend
+        # EMA200 is the long-term trend filter
+        ema200_result = next(
+            (r for r in indicator_results if r.name == "Golden/Death Cross (50/200)"), None
+        )
+        if ema200_result:
+            if ema200_result.signal in (Signal.BUY, Signal.STRONG_BUY):
+                # Long term bullish — boost BUY signals, penalise SELL
+                if confidence > 50:  confidence = min(100, confidence + 5)
+                if confidence < 50:  confidence = max(0,   confidence - 5)
+            elif ema200_result.signal in (Signal.SELL, Signal.STRONG_SELL):
+                # Long term bearish — boost SELL signals, penalise BUY
+                if confidence < 50:  confidence = max(0,   confidence - 5)
+                if confidence > 50:  confidence = min(100, confidence + 5) if False else confidence
+
         # Volume confirmation: if volume spike > 1.5x average, boost by 5
         vol_spike = next(
             (r for r in indicator_results if r.name == "Volume Spike"), None
@@ -179,25 +195,28 @@ class ScoringEngine:
 
         if confidence >= 60:
             action = "BUY"
-            # Stop = recent swing low (last 20 candles) or 1.5x ATR, whichever is tighter
-            swing_low  = df["low"].rolling(20).min().iloc[-1]
-            stop_loss  = max(swing_low, current_price - atr_val * 1.5)
-            # Target = next resistance (recent swing high) or 3x ATR minimum
-            swing_high = df["high"].rolling(20).max().iloc[-1]
-            tp1 = max(current_price + atr_val * 2.0, swing_high * 0.995)
-            tp2 = current_price + (current_price - stop_loss) * 3.0  # 1:3 RR
+            # Chandelier Exit SL — highest high of last 22 candles minus 3x ATR
+            # Proven by Chuck LeBeau, better than fixed ATR multiplier
+            highest_22 = df["high"].rolling(22).max().iloc[-1]
+            chandelier_sl = highest_22 - (atr_val * 3.0)
+            # Use chandelier if it's tighter than 2x ATR, else use 2x ATR
+            atr_sl = current_price - (atr_val * 2.0)
+            stop_loss = max(chandelier_sl, atr_sl)  # tighter of the two
+            tp1 = current_price + (atr_val * 3.0)   # 1:1.5 RR
+            tp2 = current_price + (atr_val * 6.0)   # 1:3 RR
         elif confidence <= 40:
             action = "SELL"
-            swing_high = df["high"].rolling(20).max().iloc[-1]
-            stop_loss  = min(swing_high, current_price + atr_val * 1.5)
-            swing_low  = df["low"].rolling(20).min().iloc[-1]
-            tp1 = min(current_price - atr_val * 2.0, swing_low * 1.005)
-            tp2 = current_price - (stop_loss - current_price) * 3.0
+            lowest_22 = df["low"].rolling(22).min().iloc[-1]
+            chandelier_sl = lowest_22 + (atr_val * 3.0)
+            atr_sl = current_price + (atr_val * 2.0)
+            stop_loss = min(chandelier_sl, atr_sl)
+            tp1 = current_price - (atr_val * 3.0)
+            tp2 = current_price - (atr_val * 6.0)
         else:
             action = "HOLD"
-            stop_loss = current_price - atr_val * 1.5
-            tp1 = current_price + atr_val * 2.0
-            tp2 = current_price + atr_val * 4.0
+            stop_loss = current_price - (atr_val * 2.0)
+            tp1       = current_price + (atr_val * 3.0)
+            tp2       = current_price + (atr_val * 6.0)
 
         risk   = abs(current_price - stop_loss)
         reward = abs(tp1 - current_price)
