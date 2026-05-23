@@ -1,10 +1,6 @@
 """
-Candlestick Pattern Recognition Module.
-
-Detects 20+ candlestick patterns:
-- Single candle patterns (Doji, Hammer, Shooting Star, etc.)
-- Double candle patterns (Engulfing, Harami, etc.)
-- Triple candle patterns (Morning/Evening Star, Three Soldiers/Crows, etc.)
+Candlestick Pattern Recognition — correct math, strict conditions.
+Only fires when pattern is clearly visible on chart.
 """
 
 from dataclasses import dataclass
@@ -18,636 +14,307 @@ from core.indicators import Signal
 class PatternResult:
     name: str
     signal: Signal
-    confidence: float  # 0.0 to 1.0
+    confidence: float
     description: str
 
 
 class CandlestickPatterns:
-    """Detects candlestick patterns on OHLCV data."""
+
+    # ── helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _body(row: pd.Series) -> float:
-        return abs(row["close"] - row["open"])
+    def _body(r: pd.Series) -> float:
+        return abs(r["close"] - r["open"])
 
     @staticmethod
-    def _upper_shadow(row: pd.Series) -> float:
-        return row["high"] - max(row["close"], row["open"])
+    def _upper_wick(r: pd.Series) -> float:
+        return r["high"] - max(r["close"], r["open"])
 
     @staticmethod
-    def _lower_shadow(row: pd.Series) -> float:
-        return min(row["close"], row["open"]) - row["low"]
+    def _lower_wick(r: pd.Series) -> float:
+        return min(r["close"], r["open"]) - r["low"]
 
     @staticmethod
-    def _is_bullish(row: pd.Series) -> bool:
-        return row["close"] > row["open"]
+    def _range(r: pd.Series) -> float:
+        return r["high"] - r["low"]
 
     @staticmethod
-    def _is_bearish(row: pd.Series) -> bool:
-        return row["close"] < row["open"]
+    def _bull(r: pd.Series) -> bool:
+        return r["close"] > r["open"]
 
     @staticmethod
-    def _candle_range(row: pd.Series) -> float:
-        return row["high"] - row["low"]
+    def _bear(r: pd.Series) -> bool:
+        return r["close"] < r["open"]
+
+    def _trend(self, df: pd.DataFrame, n: int = 5) -> str:
+        """Returns 'up', 'down', or 'flat' based on last n closes."""
+        closes = df["close"].iloc[-n-1:-1]
+        if closes.iloc[-1] > closes.iloc[0] * 1.002:
+            return "up"
+        if closes.iloc[-1] < closes.iloc[0] * 0.998:
+            return "down"
+        return "flat"
+
+    # ── main entry ───────────────────────────────────────────────────────────
 
     def detect_all(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 5:
+        if len(df) < 10:
             return []
-
-        patterns: list[PatternResult] = []
-
-        # Single candle patterns
-        patterns.extend(self._detect_doji(df))
-        patterns.extend(self._detect_hammer(df))
-        patterns.extend(self._detect_inverted_hammer(df))
-        patterns.extend(self._detect_shooting_star(df))
-        patterns.extend(self._detect_hanging_man(df))
-        patterns.extend(self._detect_spinning_top(df))
-        patterns.extend(self._detect_marubozu(df))
-        patterns.extend(self._detect_dragonfly_doji(df))
-        patterns.extend(self._detect_gravestone_doji(df))
-
-        # Double candle patterns
-        patterns.extend(self._detect_engulfing(df))
-        patterns.extend(self._detect_harami(df))
-        patterns.extend(self._detect_piercing_line(df))
-        patterns.extend(self._detect_dark_cloud_cover(df))
-        patterns.extend(self._detect_tweezer_top_bottom(df))
-
-        # Triple candle patterns
-        patterns.extend(self._detect_morning_star(df))
-        patterns.extend(self._detect_evening_star(df))
-        patterns.extend(self._detect_three_white_soldiers(df))
-        patterns.extend(self._detect_three_black_crows(df))
-        patterns.extend(self._detect_three_inside(df))
-        patterns.extend(self._detect_three_outside(df))
-
-        # Chart patterns
-        patterns.extend(self._detect_double_top(df))
-        patterns.extend(self._detect_double_bottom(df))
-        patterns.extend(self._detect_head_and_shoulders(df))
-
-        return patterns
-
-    def _detect_doji(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        cr = self._candle_range(row)
-
-        if cr == 0:
-            return []
-
-        if body / cr < 0.1:
-            return [PatternResult(
-                name="Doji",
-                signal=Signal.NEUTRAL,
-                confidence=0.6,
-                description="Doji - indecision, potential reversal",
-            )]
-        return []
-
-    def _detect_dragonfly_doji(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        cr = self._candle_range(row)
-        lower = self._lower_shadow(row)
-        upper = self._upper_shadow(row)
-
-        if cr == 0:
-            return []
-
-        if body / cr < 0.1 and lower / cr > 0.6 and upper / cr < 0.1:
-            return [PatternResult(
-                name="Dragonfly Doji",
-                signal=Signal.STRONG_BUY,
-                confidence=0.7,
-                description="Dragonfly Doji - strong bullish reversal signal",
-            )]
-        return []
-
-    def _detect_gravestone_doji(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        cr = self._candle_range(row)
-        lower = self._lower_shadow(row)
-        upper = self._upper_shadow(row)
-
-        if cr == 0:
-            return []
-
-        if body / cr < 0.1 and upper / cr > 0.6 and lower / cr < 0.1:
-            return [PatternResult(
-                name="Gravestone Doji",
-                signal=Signal.STRONG_SELL,
-                confidence=0.7,
-                description="Gravestone Doji - strong bearish reversal signal",
-            )]
-        return []
-
-    def _detect_hammer(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        df.iloc[-2]
-        body = self._body(row)
-        lower = self._lower_shadow(row)
-        upper = self._upper_shadow(row)
-
-        if body == 0:
-            return []
-
-        is_downtrend = df["close"].iloc[-5:].iloc[0] > df["close"].iloc[-5:].iloc[-2]
-
-        if lower > 2 * body and upper < body * 0.3 and is_downtrend:
-            return [PatternResult(
-                name="Hammer",
-                signal=Signal.STRONG_BUY,
-                confidence=0.75,
-                description="Hammer - bullish reversal after downtrend",
-            )]
-        return []
-
-    def _detect_inverted_hammer(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        lower = self._lower_shadow(row)
-        upper = self._upper_shadow(row)
-
-        if body == 0:
-            return []
-
-        is_downtrend = df["close"].iloc[-5:].iloc[0] > df["close"].iloc[-5:].iloc[-2]
-
-        if upper > 2 * body and lower < body * 0.3 and is_downtrend:
-            return [PatternResult(
-                name="Inverted Hammer",
-                signal=Signal.BUY,
-                confidence=0.65,
-                description="Inverted Hammer - potential bullish reversal",
-            )]
-        return []
-
-    def _detect_shooting_star(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        lower = self._lower_shadow(row)
-        upper = self._upper_shadow(row)
-
-        if body == 0:
-            return []
-
-        is_uptrend = df["close"].iloc[-5:].iloc[0] < df["close"].iloc[-5:].iloc[-2]
-
-        if upper > 2 * body and lower < body * 0.3 and is_uptrend:
-            return [PatternResult(
-                name="Shooting Star",
-                signal=Signal.STRONG_SELL,
-                confidence=0.75,
-                description="Shooting Star - bearish reversal after uptrend",
-            )]
-        return []
-
-    def _detect_hanging_man(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        lower = self._lower_shadow(row)
-        upper = self._upper_shadow(row)
-
-        if body == 0:
-            return []
-
-        is_uptrend = df["close"].iloc[-5:].iloc[0] < df["close"].iloc[-5:].iloc[-2]
-
-        if lower > 2 * body and upper < body * 0.3 and is_uptrend:
-            return [PatternResult(
-                name="Hanging Man",
-                signal=Signal.SELL,
-                confidence=0.65,
-                description="Hanging Man - bearish reversal warning",
-            )]
-        return []
-
-    def _detect_spinning_top(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        cr = self._candle_range(row)
-        lower = self._lower_shadow(row)
-        upper = self._upper_shadow(row)
-
-        if cr == 0 or body == 0:
-            return []
-
-        if body / cr < 0.3 and upper > body and lower > body:
-            return [PatternResult(
-                name="Spinning Top",
-                signal=Signal.NEUTRAL,
-                confidence=0.5,
-                description="Spinning Top - market indecision",
-            )]
-        return []
-
-    def _detect_marubozu(self, df: pd.DataFrame) -> list[PatternResult]:
-        row = df.iloc[-1]
-        body = self._body(row)
-        cr = self._candle_range(row)
-
-        if cr == 0:
-            return []
-
-        if body / cr > 0.95:
-            if self._is_bullish(row):
-                return [PatternResult(
-                    name="Bullish Marubozu",
-                    signal=Signal.STRONG_BUY,
-                    confidence=0.8,
-                    description="Bullish Marubozu - strong buying pressure",
-                )]
-            else:
-                return [PatternResult(
-                    name="Bearish Marubozu",
-                    signal=Signal.STRONG_SELL,
-                    confidence=0.8,
-                    description="Bearish Marubozu - strong selling pressure",
-                )]
-        return []
-
-    def _detect_engulfing(self, df: pd.DataFrame) -> list[PatternResult]:
-        curr = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        if self._is_bearish(prev) and self._is_bullish(curr):
-            if curr["open"] <= prev["close"] and curr["close"] >= prev["open"]:
-                return [PatternResult(
-                    name="Bullish Engulfing",
-                    signal=Signal.STRONG_BUY,
-                    confidence=0.8,
-                    description="Bullish Engulfing - strong reversal signal",
-                )]
-
-        if self._is_bullish(prev) and self._is_bearish(curr):
-            if curr["open"] >= prev["close"] and curr["close"] <= prev["open"]:
-                return [PatternResult(
-                    name="Bearish Engulfing",
-                    signal=Signal.STRONG_SELL,
-                    confidence=0.8,
-                    description="Bearish Engulfing - strong reversal signal",
-                )]
-        return []
-
-    def _detect_harami(self, df: pd.DataFrame) -> list[PatternResult]:
-        curr = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        if self._is_bearish(prev) and self._is_bullish(curr):
-            if curr["open"] >= prev["close"] and curr["close"] <= prev["open"]:
-                if self._body(curr) < self._body(prev) * 0.5:
-                    return [PatternResult(
-                        name="Bullish Harami",
-                        signal=Signal.BUY,
-                        confidence=0.65,
-                        description="Bullish Harami - potential bullish reversal",
-                    )]
-
-        if self._is_bullish(prev) and self._is_bearish(curr):
-            if curr["open"] <= prev["close"] and curr["close"] >= prev["open"]:
-                if self._body(curr) < self._body(prev) * 0.5:
-                    return [PatternResult(
-                        name="Bearish Harami",
-                        signal=Signal.SELL,
-                        confidence=0.65,
-                        description="Bearish Harami - potential bearish reversal",
-                    )]
-        return []
-
-    def _detect_piercing_line(self, df: pd.DataFrame) -> list[PatternResult]:
-        curr = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        if self._is_bearish(prev) and self._is_bullish(curr):
-            midpoint = (prev["open"] + prev["close"]) / 2
-            if curr["open"] < prev["close"] and curr["close"] > midpoint:
-                return [PatternResult(
-                    name="Piercing Line",
-                    signal=Signal.BUY,
-                    confidence=0.7,
-                    description="Piercing Line - bullish reversal",
-                )]
-        return []
-
-    def _detect_dark_cloud_cover(self, df: pd.DataFrame) -> list[PatternResult]:
-        curr = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        if self._is_bullish(prev) and self._is_bearish(curr):
-            midpoint = (prev["open"] + prev["close"]) / 2
-            if curr["open"] > prev["close"] and curr["close"] < midpoint:
-                return [PatternResult(
-                    name="Dark Cloud Cover",
-                    signal=Signal.SELL,
-                    confidence=0.7,
-                    description="Dark Cloud Cover - bearish reversal",
-                )]
-        return []
-
-    def _detect_tweezer_top_bottom(self, df: pd.DataFrame) -> list[PatternResult]:
-        curr = df.iloc[-1]
-        prev = df.iloc[-2]
         results: list[PatternResult] = []
+        results.extend(self._single(df))
+        results.extend(self._double(df))
+        results.extend(self._triple(df))
+        results.extend(self._chart(df))
+        return results
 
-        tolerance = self._candle_range(curr) * 0.05 if self._candle_range(curr) > 0 else 0.01
+    # ── single candle ────────────────────────────────────────────────────────
 
-        # Tweezer Top
-        if abs(curr["high"] - prev["high"]) < tolerance:
-            if self._is_bullish(prev) and self._is_bearish(curr):
-                results.append(PatternResult(
-                    name="Tweezer Top",
-                    signal=Signal.SELL,
-                    confidence=0.65,
-                    description="Tweezer Top - bearish reversal",
-                ))
+    def _single(self, df: pd.DataFrame) -> list[PatternResult]:
+        results = []
+        r = df.iloc[-1]
+        rng = self._range(r)
+        if rng == 0:
+            return []
+        body = self._body(r)
+        uw = self._upper_wick(r)
+        lw = self._lower_wick(r)
+        trend = self._trend(df)
 
-        # Tweezer Bottom
-        if abs(curr["low"] - prev["low"]) < tolerance:
-            if self._is_bearish(prev) and self._is_bullish(curr):
-                results.append(PatternResult(
-                    name="Tweezer Bottom",
-                    signal=Signal.BUY,
-                    confidence=0.65,
-                    description="Tweezer Bottom - bullish reversal",
-                ))
+        # Doji — body < 5% of range
+        if body / rng < 0.05:
+            results.append(PatternResult("Doji", Signal.NEUTRAL, 0.6,
+                "Doji — indecision, watch for breakout direction"))
+
+        # Dragonfly Doji — tiny body at top, long lower wick
+        elif body / rng < 0.1 and lw / rng > 0.65 and uw / rng < 0.1 and trend == "down":
+            results.append(PatternResult("Dragonfly Doji", Signal.STRONG_BUY, 0.75,
+                "Dragonfly Doji — bulls rejected lower prices, bullish reversal"))
+
+        # Gravestone Doji — tiny body at bottom, long upper wick
+        elif body / rng < 0.1 and uw / rng > 0.65 and lw / rng < 0.1 and trend == "up":
+            results.append(PatternResult("Gravestone Doji", Signal.STRONG_SELL, 0.75,
+                "Gravestone Doji — bears rejected higher prices, bearish reversal"))
+
+        # Hammer — small body at top, lower wick >= 2x body, tiny upper wick, in downtrend
+        if body > 0 and lw >= 2 * body and uw <= 0.3 * body and trend == "down":
+            results.append(PatternResult("Hammer", Signal.STRONG_BUY, 0.78,
+                "Hammer — strong bullish reversal after downtrend"))
+
+        # Inverted Hammer — small body at bottom, upper wick >= 2x body, in downtrend
+        if body > 0 and uw >= 2 * body and lw <= 0.3 * body and trend == "down":
+            results.append(PatternResult("Inverted Hammer", Signal.BUY, 0.65,
+                "Inverted Hammer — potential bullish reversal, needs confirmation"))
+
+        # Shooting Star — small body at bottom, upper wick >= 2x body, in uptrend
+        if body > 0 and uw >= 2 * body and lw <= 0.3 * body and trend == "up":
+            results.append(PatternResult("Shooting Star", Signal.STRONG_SELL, 0.78,
+                "Shooting Star — bearish reversal after uptrend"))
+
+        # Hanging Man — small body at top, lower wick >= 2x body, in uptrend
+        if body > 0 and lw >= 2 * body and uw <= 0.3 * body and trend == "up":
+            results.append(PatternResult("Hanging Man", Signal.SELL, 0.65,
+                "Hanging Man — bearish warning after uptrend"))
+
+        # Marubozu — body >= 95% of range (no wicks)
+        if body / rng > 0.95:
+            if self._bull(r):
+                results.append(PatternResult("Bullish Marubozu", Signal.STRONG_BUY, 0.82,
+                    "Bullish Marubozu — pure buying pressure, no rejection"))
+            else:
+                results.append(PatternResult("Bearish Marubozu", Signal.STRONG_SELL, 0.82,
+                    "Bearish Marubozu — pure selling pressure, no rejection"))
+
+        # Spinning Top — small body, both wicks larger than body
+        if 0.05 < body / rng < 0.3 and uw > body and lw > body:
+            results.append(PatternResult("Spinning Top", Signal.NEUTRAL, 0.5,
+                "Spinning Top — indecision, neither bulls nor bears in control"))
 
         return results
 
-    def _detect_morning_star(self, df: pd.DataFrame) -> list[PatternResult]:
+    # ── double candle ────────────────────────────────────────────────────────
+
+    def _double(self, df: pd.DataFrame) -> list[PatternResult]:
+        results = []
+        curr = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        # ── Bullish Engulfing ──
+        # prev = RED candle, curr = GREEN candle
+        # curr opens BELOW prev close AND closes ABOVE prev open
+        # curr body must be LARGER than prev body
+        if (self._bear(prev) and self._bull(curr)
+                and curr["open"] < prev["close"]
+                and curr["close"] > prev["open"]
+                and self._body(curr) > self._body(prev)):
+            results.append(PatternResult("Bullish Engulfing", Signal.STRONG_BUY, 0.82,
+                "Bullish Engulfing — green candle fully covers red, strong reversal"))
+
+        # ── Bearish Engulfing ──
+        # prev = GREEN candle, curr = RED candle
+        # curr opens ABOVE prev close AND closes BELOW prev open
+        elif (self._bull(prev) and self._bear(curr)
+                and curr["open"] > prev["close"]
+                and curr["close"] < prev["open"]
+                and self._body(curr) > self._body(prev)):
+            results.append(PatternResult("Bearish Engulfing", Signal.STRONG_SELL, 0.82,
+                "Bearish Engulfing — red candle fully covers green, strong reversal"))
+
+        # ── Bullish Harami ──
+        # prev = large RED, curr = small GREEN inside prev body
+        if (self._bear(prev) and self._bull(curr)
+                and curr["open"] > prev["close"]
+                and curr["close"] < prev["open"]
+                and self._body(curr) < self._body(prev) * 0.5):
+            results.append(PatternResult("Bullish Harami", Signal.BUY, 0.65,
+                "Bullish Harami — small green inside large red, potential reversal"))
+
+        # ── Bearish Harami ──
+        if (self._bull(prev) and self._bear(curr)
+                and curr["open"] < prev["close"]
+                and curr["close"] > prev["open"]
+                and self._body(curr) < self._body(prev) * 0.5):
+            results.append(PatternResult("Bearish Harami", Signal.SELL, 0.65,
+                "Bearish Harami — small red inside large green, potential reversal"))
+
+        # ── Piercing Line ──
+        # prev = RED, curr = GREEN opens below prev low, closes above prev midpoint
+        if (self._bear(prev) and self._bull(curr)):
+            midpoint = (prev["open"] + prev["close"]) / 2
+            if curr["open"] < prev["close"] and curr["close"] > midpoint:
+                results.append(PatternResult("Piercing Line", Signal.BUY, 0.70,
+                    "Piercing Line — bulls pushed above midpoint of bearish candle"))
+
+        # ── Dark Cloud Cover ──
+        if (self._bull(prev) and self._bear(curr)):
+            midpoint = (prev["open"] + prev["close"]) / 2
+            if curr["open"] > prev["close"] and curr["close"] < midpoint:
+                results.append(PatternResult("Dark Cloud Cover", Signal.SELL, 0.70,
+                    "Dark Cloud Cover — bears pushed below midpoint of bullish candle"))
+
+        # ── Tweezer Top ──
+        tol = self._range(curr) * 0.003 if self._range(curr) > 0 else 0.5
+        if (abs(curr["high"] - prev["high"]) < tol
+                and self._bull(prev) and self._bear(curr)):
+            results.append(PatternResult("Tweezer Top", Signal.SELL, 0.65,
+                "Tweezer Top — equal highs, resistance confirmed"))
+
+        # ── Tweezer Bottom ──
+        if (abs(curr["low"] - prev["low"]) < tol
+                and self._bear(prev) and self._bull(curr)):
+            results.append(PatternResult("Tweezer Bottom", Signal.BUY, 0.65,
+                "Tweezer Bottom — equal lows, support confirmed"))
+
+        return results
+
+    # ── triple candle ────────────────────────────────────────────────────────
+
+    def _triple(self, df: pd.DataFrame) -> list[PatternResult]:
         if len(df) < 3:
             return []
-
-        first = df.iloc[-3]
-        second = df.iloc[-2]
-        third = df.iloc[-1]
-
-        if (
-            self._is_bearish(first)
-            and self._body(second) < self._body(first) * 0.3
-            and self._is_bullish(third)
-            and third["close"] > (first["open"] + first["close"]) / 2
-        ):
-            return [PatternResult(
-                name="Morning Star",
-                signal=Signal.STRONG_BUY,
-                confidence=0.85,
-                description="Morning Star - strong bullish reversal (3-candle pattern)",
-            )]
-        return []
-
-    def _detect_evening_star(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 3:
-            return []
-
-        first = df.iloc[-3]
-        second = df.iloc[-2]
-        third = df.iloc[-1]
-
-        if (
-            self._is_bullish(first)
-            and self._body(second) < self._body(first) * 0.3
-            and self._is_bearish(third)
-            and third["close"] < (first["open"] + first["close"]) / 2
-        ):
-            return [PatternResult(
-                name="Evening Star",
-                signal=Signal.STRONG_SELL,
-                confidence=0.85,
-                description="Evening Star - strong bearish reversal (3-candle pattern)",
-            )]
-        return []
-
-    def _detect_three_white_soldiers(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 3:
-            return []
-
+        results = []
         c1, c2, c3 = df.iloc[-3], df.iloc[-2], df.iloc[-1]
 
-        if (
-            self._is_bullish(c1) and self._is_bullish(c2) and self._is_bullish(c3)
-            and c2["close"] > c1["close"]
-            and c3["close"] > c2["close"]
-            and c2["open"] > c1["open"]
-            and c3["open"] > c2["open"]
-        ):
-            cr1 = self._candle_range(c1)
-            cr2 = self._candle_range(c2)
-            cr3 = self._candle_range(c3)
-            if cr1 > 0 and cr2 > 0 and cr3 > 0:
-                if (
-                    self._body(c1) / cr1 > 0.5
-                    and self._body(c2) / cr2 > 0.5
-                    and self._body(c3) / cr3 > 0.5
-                ):
-                    return [PatternResult(
-                        name="Three White Soldiers",
-                        signal=Signal.STRONG_BUY,
-                        confidence=0.85,
-                        description="Three White Soldiers - very strong bullish signal",
-                    )]
-        return []
+        # Morning Star
+        if (self._bear(c1) and self._body(c2) < self._body(c1) * 0.3
+                and self._bull(c3)
+                and c3["close"] > (c1["open"] + c1["close"]) / 2):
+            results.append(PatternResult("Morning Star", Signal.STRONG_BUY, 0.85,
+                "Morning Star — 3-candle bullish reversal, very reliable"))
 
-    def _detect_three_black_crows(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 3:
-            return []
+        # Evening Star
+        if (self._bull(c1) and self._body(c2) < self._body(c1) * 0.3
+                and self._bear(c3)
+                and c3["close"] < (c1["open"] + c1["close"]) / 2):
+            results.append(PatternResult("Evening Star", Signal.STRONG_SELL, 0.85,
+                "Evening Star — 3-candle bearish reversal, very reliable"))
 
-        c1, c2, c3 = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+        # Three White Soldiers — 3 consecutive bullish candles, each closing higher
+        if (self._bull(c1) and self._bull(c2) and self._bull(c3)
+                and c2["close"] > c1["close"] and c3["close"] > c2["close"]
+                and c2["open"] > c1["open"] and c3["open"] > c2["open"]
+                and self._body(c1) / self._range(c1) > 0.6 if self._range(c1) > 0 else False
+                and self._body(c2) / self._range(c2) > 0.6 if self._range(c2) > 0 else False
+                and self._body(c3) / self._range(c3) > 0.6 if self._range(c3) > 0 else False):
+            results.append(PatternResult("Three White Soldiers", Signal.STRONG_BUY, 0.88,
+                "Three White Soldiers — 3 strong green candles, powerful uptrend"))
 
-        if (
-            self._is_bearish(c1) and self._is_bearish(c2) and self._is_bearish(c3)
-            and c2["close"] < c1["close"]
-            and c3["close"] < c2["close"]
-            and c2["open"] < c1["open"]
-            and c3["open"] < c2["open"]
-        ):
-            cr1 = self._candle_range(c1)
-            cr2 = self._candle_range(c2)
-            cr3 = self._candle_range(c3)
-            if cr1 > 0 and cr2 > 0 and cr3 > 0:
-                if (
-                    self._body(c1) / cr1 > 0.5
-                    and self._body(c2) / cr2 > 0.5
-                    and self._body(c3) / cr3 > 0.5
-                ):
-                    return [PatternResult(
-                        name="Three Black Crows",
-                        signal=Signal.STRONG_SELL,
-                        confidence=0.85,
-                        description="Three Black Crows - very strong bearish signal",
-                    )]
-        return []
-
-    def _detect_three_inside(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 3:
-            return []
-
-        c1, c2, c3 = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+        # Three Black Crows — 3 consecutive bearish candles, each closing lower
+        if (self._bear(c1) and self._bear(c2) and self._bear(c3)
+                and c2["close"] < c1["close"] and c3["close"] < c2["close"]
+                and c2["open"] < c1["open"] and c3["open"] < c2["open"]
+                and self._body(c1) / self._range(c1) > 0.6 if self._range(c1) > 0 else False
+                and self._body(c2) / self._range(c2) > 0.6 if self._range(c2) > 0 else False
+                and self._body(c3) / self._range(c3) > 0.6 if self._range(c3) > 0 else False):
+            results.append(PatternResult("Three Black Crows", Signal.STRONG_SELL, 0.88,
+                "Three Black Crows — 3 strong red candles, powerful downtrend"))
 
         # Three Inside Up
-        if (
-            self._is_bearish(c1)
-            and self._is_bullish(c2)
-            and c2["close"] < c1["open"] and c2["open"] > c1["close"]
-            and self._is_bullish(c3)
-            and c3["close"] > c1["open"]
-        ):
-            return [PatternResult(
-                name="Three Inside Up",
-                signal=Signal.STRONG_BUY,
-                confidence=0.75,
-                description="Three Inside Up - bullish reversal confirmation",
-            )]
+        if (self._bear(c1) and self._bull(c2)
+                and c2["open"] > c1["close"] and c2["close"] < c1["open"]
+                and self._bull(c3) and c3["close"] > c1["open"]):
+            results.append(PatternResult("Three Inside Up", Signal.STRONG_BUY, 0.75,
+                "Three Inside Up — bullish reversal confirmed by 3rd candle"))
 
         # Three Inside Down
-        if (
-            self._is_bullish(c1)
-            and self._is_bearish(c2)
-            and c2["close"] > c1["open"] and c2["open"] < c1["close"]
-            and self._is_bearish(c3)
-            and c3["close"] < c1["open"]
-        ):
-            return [PatternResult(
-                name="Three Inside Down",
-                signal=Signal.STRONG_SELL,
-                confidence=0.75,
-                description="Three Inside Down - bearish reversal confirmation",
-            )]
-        return []
+        if (self._bull(c1) and self._bear(c2)
+                and c2["open"] < c1["close"] and c2["close"] > c1["open"]
+                and self._bear(c3) and c3["close"] < c1["open"]):
+            results.append(PatternResult("Three Inside Down", Signal.STRONG_SELL, 0.75,
+                "Three Inside Down — bearish reversal confirmed by 3rd candle"))
 
-    def _detect_three_outside(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 3:
-            return []
+        return results
 
-        c1, c2, c3 = df.iloc[-3], df.iloc[-2], df.iloc[-1]
+    # ── chart patterns ───────────────────────────────────────────────────────
 
-        # Three Outside Up
-        if (
-            self._is_bearish(c1)
-            and self._is_bullish(c2)
-            and c2["open"] <= c1["close"] and c2["close"] >= c1["open"]
-            and self._is_bullish(c3)
-            and c3["close"] > c2["close"]
-        ):
-            return [PatternResult(
-                name="Three Outside Up",
-                signal=Signal.STRONG_BUY,
-                confidence=0.75,
-                description="Three Outside Up - bullish reversal confirmation",
-            )]
-
-        # Three Outside Down
-        if (
-            self._is_bullish(c1)
-            and self._is_bearish(c2)
-            and c2["open"] >= c1["close"] and c2["close"] <= c1["open"]
-            and self._is_bearish(c3)
-            and c3["close"] < c2["close"]
-        ):
-            return [PatternResult(
-                name="Three Outside Down",
-                signal=Signal.STRONG_SELL,
-                confidence=0.75,
-                description="Three Outside Down - bearish reversal confirmation",
-            )]
-        return []
-
-    def _detect_double_top(self, df: pd.DataFrame) -> list[PatternResult]:
+    def _chart(self, df: pd.DataFrame) -> list[PatternResult]:
+        results = []
         if len(df) < 30:
-            return []
+            return results
 
-        highs = df["high"].iloc[-30:]
-        peaks = []
-        for i in range(2, len(highs) - 2):
-            if highs.iloc[i] > highs.iloc[i - 1] and highs.iloc[i] > highs.iloc[i - 2]:
-                if highs.iloc[i] > highs.iloc[i + 1] and highs.iloc[i] > highs.iloc[i + 2]:
-                    peaks.append((i, highs.iloc[i]))
-
+        # Double Top
+        highs = df["high"].iloc[-40:]
+        peaks = [i for i in range(2, len(highs) - 2)
+                 if highs.iloc[i] > highs.iloc[i-1]
+                 and highs.iloc[i] > highs.iloc[i-2]
+                 and highs.iloc[i] > highs.iloc[i+1]
+                 and highs.iloc[i] > highs.iloc[i+2]]
         if len(peaks) >= 2:
             p1, p2 = peaks[-2], peaks[-1]
-            tolerance = p1[1] * 0.02
-            if abs(p1[1] - p2[1]) < tolerance and p2[0] - p1[0] >= 5:
-                return [PatternResult(
-                    name="Double Top",
-                    signal=Signal.STRONG_SELL,
-                    confidence=0.8,
-                    description="Double Top - major bearish reversal pattern",
-                )]
-        return []
+            if (abs(highs.iloc[p1] - highs.iloc[p2]) < highs.iloc[p1] * 0.015
+                    and p2 - p1 >= 5):
+                results.append(PatternResult("Double Top", Signal.STRONG_SELL, 0.80,
+                    "Double Top — price failed twice at same resistance, bearish"))
 
-    def _detect_double_bottom(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 30:
-            return []
-
-        lows = df["low"].iloc[-30:]
-        troughs = []
-        for i in range(2, len(lows) - 2):
-            if lows.iloc[i] < lows.iloc[i - 1] and lows.iloc[i] < lows.iloc[i - 2]:
-                if lows.iloc[i] < lows.iloc[i + 1] and lows.iloc[i] < lows.iloc[i + 2]:
-                    troughs.append((i, lows.iloc[i]))
-
+        # Double Bottom
+        lows = df["low"].iloc[-40:]
+        troughs = [i for i in range(2, len(lows) - 2)
+                   if lows.iloc[i] < lows.iloc[i-1]
+                   and lows.iloc[i] < lows.iloc[i-2]
+                   and lows.iloc[i] < lows.iloc[i+1]
+                   and lows.iloc[i] < lows.iloc[i+2]]
         if len(troughs) >= 2:
             t1, t2 = troughs[-2], troughs[-1]
-            tolerance = t1[1] * 0.02
-            if abs(t1[1] - t2[1]) < tolerance and t2[0] - t1[0] >= 5:
-                return [PatternResult(
-                    name="Double Bottom",
-                    signal=Signal.STRONG_BUY,
-                    confidence=0.8,
-                    description="Double Bottom - major bullish reversal pattern",
-                )]
-        return []
+            if (abs(lows.iloc[t1] - lows.iloc[t2]) < lows.iloc[t1] * 0.015
+                    and t2 - t1 >= 5):
+                results.append(PatternResult("Double Bottom", Signal.STRONG_BUY, 0.80,
+                    "Double Bottom — price bounced twice from same support, bullish"))
 
-    def _detect_head_and_shoulders(self, df: pd.DataFrame) -> list[PatternResult]:
-        if len(df) < 40:
-            return []
-
-        highs = df["high"].iloc[-40:]
-        peaks = []
-        for i in range(2, len(highs) - 2):
-            if highs.iloc[i] > highs.iloc[i - 1] and highs.iloc[i] > highs.iloc[i - 2]:
-                if highs.iloc[i] > highs.iloc[i + 1] and highs.iloc[i] > highs.iloc[i + 2]:
-                    peaks.append((i, highs.iloc[i]))
-
+        # Head and Shoulders
         if len(peaks) >= 3:
             left, head, right = peaks[-3], peaks[-2], peaks[-1]
-            tolerance = head[1] * 0.03
-
-            if (
-                head[1] > left[1]
-                and head[1] > right[1]
-                and abs(left[1] - right[1]) < tolerance
-            ):
-                return [PatternResult(
-                    name="Head and Shoulders",
-                    signal=Signal.STRONG_SELL,
-                    confidence=0.85,
-                    description="Head and Shoulders - major bearish reversal pattern",
-                )]
+            if (highs.iloc[head] > highs.iloc[left]
+                    and highs.iloc[head] > highs.iloc[right]
+                    and abs(highs.iloc[left] - highs.iloc[right]) < highs.iloc[head] * 0.02):
+                results.append(PatternResult("Head and Shoulders", Signal.STRONG_SELL, 0.85,
+                    "Head & Shoulders — classic bearish reversal, neckline break = sell"))
 
         # Inverse Head and Shoulders
-        lows = df["low"].iloc[-40:]
-        troughs = []
-        for i in range(2, len(lows) - 2):
-            if lows.iloc[i] < lows.iloc[i - 1] and lows.iloc[i] < lows.iloc[i - 2]:
-                if lows.iloc[i] < lows.iloc[i + 1] and lows.iloc[i] < lows.iloc[i + 2]:
-                    troughs.append((i, lows.iloc[i]))
-
         if len(troughs) >= 3:
             left, head, right = troughs[-3], troughs[-2], troughs[-1]
-            tolerance = head[1] * 0.03
+            if (lows.iloc[head] < lows.iloc[left]
+                    and lows.iloc[head] < lows.iloc[right]
+                    and abs(lows.iloc[left] - lows.iloc[right]) < lows.iloc[head] * 0.02):
+                results.append(PatternResult("Inverse Head and Shoulders", Signal.STRONG_BUY, 0.85,
+                    "Inverse H&S — classic bullish reversal, neckline break = buy"))
 
-            if (
-                head[1] < left[1]
-                and head[1] < right[1]
-                and abs(left[1] - right[1]) < tolerance
-            ):
-                return [PatternResult(
-                    name="Inverse Head and Shoulders",
-                    signal=Signal.STRONG_BUY,
-                    confidence=0.85,
-                    description="Inverse Head & Shoulders - major bullish reversal pattern",
-                )]
-
-        return []
+        return results

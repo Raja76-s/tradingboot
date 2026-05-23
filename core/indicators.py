@@ -110,11 +110,13 @@ class TrendIndicators:
 
     @staticmethod
     def _atr_calc(df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Wilder's ATR — industry standard, used by TradingView/Bloomberg."""
         high_low = df["high"] - df["low"]
         high_close = (df["high"] - df["close"].shift(1)).abs()
         low_close = (df["low"] - df["close"].shift(1)).abs()
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        return true_range.rolling(window=period).mean()
+        # Wilder's smoothing: alpha = 1/period (not simple rolling mean)
+        return true_range.ewm(alpha=1.0 / period, adjust=False).mean()
 
     @staticmethod
     def ichimoku(
@@ -207,19 +209,22 @@ class TrendIndicators:
 
     @staticmethod
     def adx(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
+        """Wilder's ADX — correct DM smoothing."""
         plus_dm = df["high"].diff()
         minus_dm = -df["low"].diff()
-
         plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
         minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
 
+        # Wilder's smoothing for DM and TR
         atr = TrendIndicators._atr_calc(df, period)
+        plus_dm_smooth = plus_dm.ewm(alpha=1.0 / period, adjust=False).mean()
+        minus_dm_smooth = minus_dm.ewm(alpha=1.0 / period, adjust=False).mean()
 
-        plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
-        minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr)
+        plus_di = 100 * (plus_dm_smooth / atr)
+        minus_di = 100 * (minus_dm_smooth / atr)
 
-        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
-        adx_val = dx.rolling(window=period).mean()
+        dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+        adx_val = dx.ewm(alpha=1.0 / period, adjust=False).mean()
 
         result = pd.DataFrame(index=df.index)
         result["adx"] = adx_val
@@ -233,12 +238,14 @@ class MomentumIndicators:
 
     @staticmethod
     def rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Wilder's RSI — same as TradingView standard."""
         delta = df["close"].diff()
         gain = delta.where(delta > 0, 0.0)
         loss = (-delta).where(delta < 0, 0.0)
-        avg_gain = gain.rolling(window=period).mean()
-        avg_loss = loss.rolling(window=period).mean()
-        rs = avg_gain / avg_loss
+        # Wilder's smoothing: first value = simple mean, then EMA with alpha=1/period
+        avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
         return 100 - (100 / (1 + rs))
 
     @staticmethod
@@ -422,15 +429,9 @@ class VolumeIndicators:
 
     @staticmethod
     def obv(df: pd.DataFrame) -> pd.Series:
-        obv_vals = pd.Series(0.0, index=df.index)
-        for i in range(1, len(df)):
-            if df["close"].iloc[i] > df["close"].iloc[i - 1]:
-                obv_vals.iloc[i] = obv_vals.iloc[i - 1] + df["volume"].iloc[i]
-            elif df["close"].iloc[i] < df["close"].iloc[i - 1]:
-                obv_vals.iloc[i] = obv_vals.iloc[i - 1] - df["volume"].iloc[i]
-            else:
-                obv_vals.iloc[i] = obv_vals.iloc[i - 1]
-        return obv_vals
+        """Vectorized OBV — no loop, fast."""
+        direction = np.sign(df["close"].diff()).fillna(0)
+        return (direction * df["volume"]).cumsum()
 
     @staticmethod
     def cmf(df: pd.DataFrame, period: int = 20) -> pd.Series:
@@ -480,12 +481,13 @@ class VolumeIndicators:
 
     @staticmethod
     def volume_rsi(df: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Volume RSI with Wilder's smoothing."""
         delta = df["volume"].diff()
         gain = delta.where(delta > 0, 0.0)
         loss = (-delta).where(delta < 0, 0.0)
-        avg_gain = gain.rolling(window=period).mean()
-        avg_loss = loss.rolling(window=period).mean()
-        rs = avg_gain / avg_loss
+        avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
         return 100 - (100 / (1 + rs))
 
 
@@ -722,40 +724,29 @@ class IndicatorEngine:
     def _evaluate_momentum(self, df: pd.DataFrame) -> list[IndicatorResult]:
         results: list[IndicatorResult] = []
 
-        # RSI
+        # RSI — oversold/overbought only, divergence included
         rsi_val = MomentumIndicators.rsi(df, self.config.rsi_period).iloc[-1]
         MomentumIndicators.rsi(df, self.config.rsi_period).iloc[-2]
 
-        if rsi_val < self.config.rsi_oversold:
-            signal = Signal.STRONG_BUY
-        elif rsi_val < 40:
-            signal = Signal.BUY
-        elif rsi_val > self.config.rsi_overbought:
-            signal = Signal.STRONG_SELL
-        elif rsi_val > 60:
-            signal = Signal.SELL
-        else:
-            signal = Signal.NEUTRAL
+        if rsi_val < self.config.rsi_oversold:      signal = Signal.STRONG_BUY
+        elif rsi_val < 40:                           signal = Signal.BUY
+        elif rsi_val > self.config.rsi_overbought:  signal = Signal.STRONG_SELL
+        elif rsi_val > 60:                           signal = Signal.SELL
+        else:                                        signal = Signal.NEUTRAL
 
-        # RSI divergence detection
+        # RSI divergence
         price_higher = df["close"].iloc[-1] > df["close"].iloc[-5]
         rsi_higher = rsi_val > MomentumIndicators.rsi(df, self.config.rsi_period).iloc[-5]
-
         divergence = ""
         if price_higher and not rsi_higher:
             divergence = " (Bearish Divergence!)"
-            if signal in (Signal.NEUTRAL, Signal.BUY):
-                signal = Signal.SELL
+            if signal in (Signal.NEUTRAL, Signal.BUY): signal = Signal.SELL
         elif not price_higher and rsi_higher:
             divergence = " (Bullish Divergence!)"
-            if signal in (Signal.NEUTRAL, Signal.SELL):
-                signal = Signal.BUY
+            if signal in (Signal.NEUTRAL, Signal.SELL): signal = Signal.BUY
 
         results.append(IndicatorResult(
-            name="RSI",
-            signal=signal,
-            value=rsi_val,
-            weight=2.0,
+            name="RSI", signal=signal, value=rsi_val, weight=1.5,
             details=f"RSI={rsi_val:.1f}{divergence}",
         ))
 
@@ -777,10 +768,7 @@ class IndicatorEngine:
                 signal = Signal.NEUTRAL
 
             results.append(IndicatorResult(
-                name="Stochastic RSI",
-                signal=signal,
-                value=srsi_k,
-                weight=1.2,
+                name="Stochastic RSI", signal=signal, value=srsi_k, weight=0.8,
                 details=f"StochRSI K={srsi_k:.1f}, D={srsi_d:.1f}",
             ))
 
@@ -832,10 +820,7 @@ class IndicatorEngine:
                 signal = Signal.NEUTRAL
 
             results.append(IndicatorResult(
-                name="Stochastic Oscillator",
-                signal=signal,
-                value=stoch_k_val,
-                weight=1.2,
+                name="Stochastic Oscillator", signal=signal, value=stoch_k_val, weight=0.8,
                 details=f"K={stoch_k_val:.1f}, D={stoch_d_val:.1f}",
             ))
 
