@@ -271,49 +271,62 @@ class CandlestickPatterns:
         if len(df) < 30:
             return results
 
-        # Double Top
         highs = df["high"].iloc[-40:]
+        lows = df["low"].iloc[-40:]
+
         peaks = [i for i in range(2, len(highs) - 2)
                  if highs.iloc[i] > highs.iloc[i-1]
                  and highs.iloc[i] > highs.iloc[i-2]
                  and highs.iloc[i] > highs.iloc[i+1]
                  and highs.iloc[i] > highs.iloc[i+2]]
-        if len(peaks) >= 2:
-            p1, p2 = peaks[-2], peaks[-1]
-            if (abs(highs.iloc[p1] - highs.iloc[p2]) < highs.iloc[p1] * 0.015
-                    and p2 - p1 >= 5):
-                results.append(PatternResult("Double Top", Signal.STRONG_SELL, 0.80,
-                    "Double Top — price failed twice at same resistance, bearish"))
 
-        # Double Bottom
-        lows = df["low"].iloc[-40:]
         troughs = [i for i in range(2, len(lows) - 2)
                    if lows.iloc[i] < lows.iloc[i-1]
                    and lows.iloc[i] < lows.iloc[i-2]
                    and lows.iloc[i] < lows.iloc[i+1]
                    and lows.iloc[i] < lows.iloc[i+2]]
-        if len(troughs) >= 2:
+
+        double_top = False
+        double_bottom = False
+
+        # Double Top — only if last peak is RECENT (within last 10 candles)
+        if len(peaks) >= 2:
+            p1, p2 = peaks[-2], peaks[-1]
+            if (abs(highs.iloc[p1] - highs.iloc[p2]) < highs.iloc[p1] * 0.015
+                    and p2 - p1 >= 5
+                    and p2 >= len(highs) - 10):  # recent peak
+                double_top = True
+                results.append(PatternResult("Double Top", Signal.STRONG_SELL, 0.80,
+                    "Double Top — price failed twice at same resistance, bearish"))
+
+        # Double Bottom — only if last trough is RECENT (within last 10 candles)
+        # AND no double top detected (they cannot coexist)
+        if len(troughs) >= 2 and not double_top:
             t1, t2 = troughs[-2], troughs[-1]
             if (abs(lows.iloc[t1] - lows.iloc[t2]) < lows.iloc[t1] * 0.015
-                    and t2 - t1 >= 5):
+                    and t2 - t1 >= 5
+                    and t2 >= len(lows) - 10):  # recent trough
+                double_bottom = True
                 results.append(PatternResult("Double Bottom", Signal.STRONG_BUY, 0.80,
                     "Double Bottom — price bounced twice from same support, bullish"))
 
-        # Head and Shoulders
-        if len(peaks) >= 3:
+        # Head and Shoulders — only if no double bottom
+        if len(peaks) >= 3 and not double_bottom:
             left, head, right = peaks[-3], peaks[-2], peaks[-1]
             if (highs.iloc[head] > highs.iloc[left]
                     and highs.iloc[head] > highs.iloc[right]
-                    and abs(highs.iloc[left] - highs.iloc[right]) < highs.iloc[head] * 0.02):
+                    and abs(highs.iloc[left] - highs.iloc[right]) < highs.iloc[head] * 0.02
+                    and right >= len(highs) - 10):
                 results.append(PatternResult("Head and Shoulders", Signal.STRONG_SELL, 0.85,
                     "Head & Shoulders — classic bearish reversal, neckline break = sell"))
 
-        # Inverse Head and Shoulders
-        if len(troughs) >= 3:
+        # Inverse Head and Shoulders — only if no double top
+        if len(troughs) >= 3 and not double_top:
             left, head, right = troughs[-3], troughs[-2], troughs[-1]
             if (lows.iloc[head] < lows.iloc[left]
                     and lows.iloc[head] < lows.iloc[right]
-                    and abs(lows.iloc[left] - lows.iloc[right]) < lows.iloc[head] * 0.02):
+                    and abs(lows.iloc[left] - lows.iloc[right]) < lows.iloc[head] * 0.02
+                    and right >= len(lows) - 10):
                 results.append(PatternResult("Inverse Head and Shoulders", Signal.STRONG_BUY, 0.85,
                     "Inverse H&S — classic bullish reversal, neckline break = buy"))
 
