@@ -118,7 +118,7 @@ def cmd_backtest(pair: str = "BTCUSDT") -> None:
     )
 
     print("\nRunning backtest...")
-    result = backtester.run(df, bt_config)
+    result = backtester.run(df, bt_config, step=10)
     print(backtester.print_results(result))
 
     print(f"\n{Fore.CYAN}Optimization across confidence levels:{Style.RESET_ALL}")
