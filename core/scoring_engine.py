@@ -48,14 +48,25 @@ SIGNAL_SCORES = {
     Signal.STRONG_SELL: -2.0,
 }
 
-# High-weight indicators that must agree for a CONFIRMED signal
-# If these disagree, confidence is penalised heavily
+# Indicators grouped by category for unbiased scoring
+# Each category contributes equally (33% each) to final score
+# This prevents 9 trend indicators from drowning out 8 momentum indicators
+TREND_INDICATORS = {
+    "EMA Crossover (9/21)", "Golden/Death Cross (50/200)", "Price vs EMA200",
+    "Supertrend", "Ichimoku Cloud", "Parabolic SAR", "ADX", "VWAP",
+    "DEMA (21)", "TEMA (21)",
+}
+MOMENTUM_INDICATORS = {
+    "RSI", "Stochastic RSI", "MACD", "Stochastic Oscillator", "Williams %R",
+    "CCI", "MFI", "ROC", "Awesome Oscillator", "Ultimate Oscillator", "TSI",
+}
+VOLUME_INDICATORS = {
+    "OBV", "CMF", "Volume Spike", "Force Index", "Volume RSI",
+    "Bollinger Bands", "Keltner Channels", "Donchian Channels", "BB Squeeze",
+}
+
 CORE_INDICATORS = {
-    "Golden/Death Cross (50/200)",
-    "MACD",
-    "RSI",
-    "Supertrend",
-    "Ichimoku Cloud",
+    "Golden/Death Cross (50/200)", "MACD", "RSI", "Supertrend", "Ichimoku Cloud",
 }
 
 
@@ -76,63 +87,65 @@ class ScoringEngine:
         indicator_results = self.indicator_engine.compute_all(df)
         pattern_results = self.pattern_detector.detect_all(df)
 
-        weighted_score = 0.0
-        total_weight = 0.0
+        # Category-based scoring — trend/momentum/volume each get equal weight
+        # This prevents 10 trend indicators from drowning out 8 momentum indicators
+        cat_scores: dict[str, list[float]] = {"trend": [], "momentum": [], "volume": []}
 
         buy_count = 0
         sell_count = 0
         neutral_count = 0
         strong_buy_count = 0
         strong_sell_count = 0
-
         core_buy = 0
         core_sell = 0
         core_seen = 0
 
         for result in indicator_results:
             score = SIGNAL_SCORES[result.signal]
-            weighted_score += score * result.weight
-            total_weight += result.weight
 
-            if result.signal == Signal.STRONG_BUY:
-                strong_buy_count += 1
-            elif result.signal == Signal.BUY:
-                buy_count += 1
-            elif result.signal == Signal.SELL:
-                sell_count += 1
-            elif result.signal == Signal.STRONG_SELL:
-                strong_sell_count += 1
+            if result.name in TREND_INDICATORS:
+                cat_scores["trend"].append(score * result.weight)
+            elif result.name in MOMENTUM_INDICATORS:
+                cat_scores["momentum"].append(score * result.weight)
             else:
-                neutral_count += 1
+                cat_scores["volume"].append(score * result.weight)
+
+            if result.signal == Signal.STRONG_BUY:   strong_buy_count += 1
+            elif result.signal == Signal.BUY:         buy_count += 1
+            elif result.signal == Signal.SELL:        sell_count += 1
+            elif result.signal == Signal.STRONG_SELL: strong_sell_count += 1
+            else:                                     neutral_count += 1
 
             if result.name in CORE_INDICATORS:
                 core_seen += 1
-                if result.signal in (Signal.BUY, Signal.STRONG_BUY):
-                    core_buy += 1
-                elif result.signal in (Signal.SELL, Signal.STRONG_SELL):
-                    core_sell += 1
+                if result.signal in (Signal.BUY, Signal.STRONG_BUY):   core_buy += 1
+                elif result.signal in (Signal.SELL, Signal.STRONG_SELL): core_sell += 1
 
+        # Average each category separately then combine equally
+        cat_avgs = []
+        for scores in cat_scores.values():
+            if scores:
+                cat_avgs.append(sum(scores) / len(scores))
+        normalized = sum(cat_avgs) / len(cat_avgs) if cat_avgs else 0.0
+
+        # Pattern scoring
+        pattern_score = 0.0
+        pattern_weight = 0.0
         for pattern in pattern_results:
             p_score = SIGNAL_SCORES[pattern.signal] * pattern.confidence
-            weight = 1.5
-            weighted_score += p_score * weight
-            total_weight += weight
+            pattern_score += p_score * 1.5
+            pattern_weight += 1.5
 
-            if pattern.signal == Signal.STRONG_BUY:
-                strong_buy_count += 1
-            elif pattern.signal == Signal.BUY:
-                buy_count += 1
-            elif pattern.signal == Signal.SELL:
-                sell_count += 1
-            elif pattern.signal == Signal.STRONG_SELL:
-                strong_sell_count += 1
-            else:
-                neutral_count += 1
+            if pattern.signal == Signal.STRONG_BUY:   strong_buy_count += 1
+            elif pattern.signal == Signal.BUY:         buy_count += 1
+            elif pattern.signal == Signal.SELL:        sell_count += 1
+            elif pattern.signal == Signal.STRONG_SELL: strong_sell_count += 1
+            else:                                      neutral_count += 1
 
-        if total_weight == 0:
-            normalized = 0.0
-        else:
-            normalized = weighted_score / total_weight
+        # Blend indicators (80%) + patterns (20%)
+        if pattern_weight > 0:
+            pattern_avg = pattern_score / pattern_weight
+            normalized = normalized * 0.8 + pattern_avg * 0.2
 
         # Convert -2..+2 range to 0..100 confidence
         confidence = int(min(100, max(0, (normalized + 2) * 25)))
@@ -253,7 +266,8 @@ class ScoringEngine:
         high_close = (df["high"] - df["close"].shift(1)).abs()
         low_close = (df["low"] - df["close"].shift(1)).abs()
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        atr = true_range.rolling(window=period).mean().iloc[-1]
+        # Wilder's smoothing
+        atr = true_range.ewm(alpha=1.0 / period, adjust=False).mean().iloc[-1]
         return float(atr) if not pd.isna(atr) else float(df["close"].iloc[-1] * 0.02)
 
     def _build_summary(
