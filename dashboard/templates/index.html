@@ -202,6 +202,12 @@
         <h1>CryptoTrader Pro</h1>
         <div style="display:flex;align-items:center;gap:12px;">
             <span id="dataSourceBadge" style="font-size:12px;padding:3px 10px;border-radius:12px;background:#21262d;color:#8b949e;">Data: checking...</span>
+            <select id="tfSelect" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;">
+                <option value="15m">15m</option>
+                <option value="1h" selected>1H &#x2605;</option>
+                <option value="4h">4H</option>
+                <option value="1d">1D</option>
+            </select>
             <span class="status" id="status">Ready</span>
             <button class="btn" id="scanBtn" onclick="scanMarkets()">Scan Markets</button>
         </div>
@@ -374,7 +380,8 @@
             status.textContent = 'Scanning markets...';
 
             try {
-                const resp = await fetch('/api/scan');
+                const tf = document.getElementById('tfSelect').value;
+                const resp = await fetch('/api/scan?timeframe=' + tf);
                 const data = await resp.json();
 
                 if (data.error) {
@@ -434,6 +441,7 @@
                         <div class="row"><span class="label">Target 2</span><span class="value" style="color:#3fb950;">${s.take_profit_2.toLocaleString()}</span></div>
                         <div class="row"><span class="label">Risk/Reward</span><span class="value">1:${s.risk_reward} ${rrLabel}</span></div>
                         <div class="row"><span class="label">Buy/Sell</span><span class="value">${s.buy_count} buy / ${s.sell_count} sell</span></div>
+                        <div class="row"><span class="label">Timeframe</span><span class="value" style="color:#58a6ff;">${s.timeframe}</span></div>
                     </div>
                 </div>`;
             }).join('');
