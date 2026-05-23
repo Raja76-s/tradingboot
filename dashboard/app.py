@@ -202,6 +202,10 @@ def _signal_to_dict(signal: TradeSignal) -> dict:
         "timeframe": signal.timeframe,
         "timestamp": signal.timestamp.isoformat(),
         "summary": signal.summary,
+        "smc_signals": [
+            {"name": i.name, "signal": i.signal.value, "details": i.details}
+            for i in signal.indicator_signals if i.name.startswith("SMC:")
+        ],
     }
 
 

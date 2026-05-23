@@ -105,6 +105,47 @@
         .indicator-signal.STRONG_BUY, .indicator-signal.BUY { color: #3fb950; }
         .indicator-signal.STRONG_SELL, .indicator-signal.SELL { color: #f85149; }
         .indicator-signal.NEUTRAL { color: #d29922; }
+        /* Chart modal */
+        .chart-modal {
+            display: none; position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%; background: rgba(0,0,0,0.85);
+            z-index: 1000; align-items: center; justify-content: center;
+        }
+        .chart-modal.open { display: flex; }
+        .chart-box {
+            background: #161b22; border: 1px solid #30363d;
+            border-radius: 10px; width: 95%; max-width: 1100px;
+            height: 80vh; display: flex; flex-direction: column;
+        }
+        .chart-header {
+            display: flex; justify-content: space-between;
+            align-items: center; padding: 12px 16px;
+            border-bottom: 1px solid #30363d;
+        }
+        .chart-header h3 { color: #58a6ff; font-size: 16px; }
+        .chart-close {
+            background: #da3633; color: white; border: none;
+            border-radius: 6px; padding: 4px 12px; cursor: pointer;
+            font-size: 14px;
+        }
+        .chart-tf-btns { display: flex; gap: 6px; }
+        .tf-btn {
+            background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+            border-radius: 4px; padding: 3px 10px; cursor: pointer;
+            font-size: 12px;
+        }
+        .tf-btn.active { background: #1d6fa4; color: white; border-color: #1d6fa4; }
+        .smc-panel {
+            padding: 8px 16px; background: #0d1117;
+            border-bottom: 1px solid #21262d;
+            display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px;
+        }
+        .smc-tag {
+            padding: 2px 8px; border-radius: 10px; font-weight: bold;
+        }
+        .smc-tag.bull { background: #0d2818; color: #3fb950; border: 1px solid #238636; }
+        .smc-tag.bear { background: #2d0f0f; color: #f85149; border: 1px solid #da3633; }
+        .smc-tag.neutral { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
         .tg-panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
         .tg-panel h3 { color: #58a6ff; margin-bottom: 12px; font-size: 16px; }
         .tg-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -226,6 +267,25 @@
         </div>
     </div>
 
+    <!-- Chart Modal -->
+    <div class="chart-modal" id="chartModal">
+        <div class="chart-box">
+            <div class="chart-header">
+                <h3 id="chartTitle">Chart</h3>
+                <div class="chart-tf-btns">
+                    <button class="tf-btn active" onclick="setTF('5')">5m</button>
+                    <button class="tf-btn" onclick="setTF('15')">15m</button>
+                    <button class="tf-btn" onclick="setTF('60')">1H</button>
+                    <button class="tf-btn" onclick="setTF('240')">4H</button>
+                    <button class="tf-btn" onclick="setTF('D')">1D</button>
+                </div>
+                <button class="chart-close" onclick="closeChart()">&#x2715; Close</button>
+            </div>
+            <div class="smc-panel" id="smcPanel"></div>
+            <div id="tvChart" style="flex:1;"></div>
+        </div>
+    </div>
+
     <script>
         // Load Telegram status on page load
         async function loadTelegramStatus() {
@@ -343,12 +403,15 @@
 
         function renderSignals(signals) {
             const grid = document.getElementById('signalsGrid');
+            // Build signal map for chart access
+            window.signalMap = {};
+            signals.forEach(s => window.signalMap[s.pair] = s);
             grid.innerHTML = signals.map(s => {
                 const gradeColor = s.grade === 'A' ? '#3fb950' : s.grade === 'B' ? '#d29922' : '#8b949e';
                 const gradeLabel = s.grade === 'A' ? '⭐ Grade A — BEST' : s.grade === 'B' ? 'Grade B — GOOD' : s.grade === 'C' ? 'Grade C — WEAK' : 'SKIP';
                 const rrLabel = s.risk_reward >= 2 ? '✅ GOOD' : s.risk_reward >= 1.5 ? '⚠️ OK' : '❌ WEAK';
                 return `
-                <div class="card signal-card ${s.action.toLowerCase()}" onclick="showDetails('${s.pair}')">
+                <div class="card signal-card ${s.action.toLowerCase()}" onclick="openChart('${s.pair}', signalMap['${s.pair}'])" style="cursor:pointer;">
                     <div class="signal-header">
                         <span class="pair-name">${s.pair}</span>
                         <span class="action-badge ${s.action.toLowerCase()}">${s.action}</span>
@@ -383,6 +446,61 @@
             const best = signals.reduce((a, b) => a.confidence > b.confidence ? a : b, signals[0]);
             document.getElementById('bestSignal').textContent = best ? `${best.confidence}%` : '-';
         }
+
+        let currentPair = 'BTCUSDT';
+        let currentTF = '60';
+
+        function openChart(pair, signal) {
+            currentPair = pair;
+            document.getElementById('chartTitle').textContent = pair + ' — Live Chart';
+            document.getElementById('chartModal').classList.add('open');
+            loadChart(pair, currentTF);
+            loadSMC(pair, signal);
+        }
+
+        function closeChart() {
+            document.getElementById('chartModal').classList.remove('open');
+            document.getElementById('tvChart').innerHTML = '';
+        }
+
+        function setTF(tf) {
+            currentTF = tf;
+            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            loadChart(currentPair, tf);
+        }
+
+        function loadChart(pair, tf) {
+            // TradingView free widget — no API key needed
+            const symbol = 'BINANCE:' + pair;
+            document.getElementById('tvChart').innerHTML = `
+                <iframe
+                    src="https://s.tradingview.com/widgetembed/?symbol=${symbol}&interval=${tf}&theme=dark&style=1&locale=en&toolbar_bg=%23161b22&hide_side_toolbar=0&allow_symbol_change=0&studies=MASimple%40tv-basicstudies%2CMASimple%40tv-basicstudies%2CMACD%40tv-basicstudies%2CRSI%40tv-basicstudies%2CSuperTrend%40tv-basicstudies&studies_overrides=%7B%22ma.length%22%3A200%7D"
+                    style="width:100%;height:100%;border:none;"
+                    allowtransparency="true"
+                    allowfullscreen
+                ></iframe>`;
+        }
+
+        function loadSMC(pair, signal) {
+            const panel = document.getElementById('smcPanel');
+            if (!signal) { panel.innerHTML = ''; return; }
+            const smcSignals = (signal.smc_signals || []);
+            if (smcSignals.length === 0) {
+                panel.innerHTML = '<span style="color:#8b949e;">No SMC signals detected</span>';
+                return;
+            }
+            panel.innerHTML = '<span style="color:#8b949e;font-weight:bold;">SMC:</span> ' +
+                smcSignals.map(s => {
+                    const cls = s.signal.includes('BUY') ? 'bull' : s.signal.includes('SELL') ? 'bear' : 'neutral';
+                    return `<span class="smc-tag ${cls}">${s.name.replace('SMC: ','')} — ${s.details}</span>`;
+                }).join(' ');
+        }
+
+        // Close modal on background click
+        document.getElementById('chartModal').addEventListener('click', function(e) {
+            if (e.target === this) closeChart();
+        });
 
         async function showDetails(pair) {
             try {
