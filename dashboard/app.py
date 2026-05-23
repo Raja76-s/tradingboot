@@ -67,7 +67,14 @@ def scan_markets():
             signal = signal_generator.scan_pair(pair, timeframe)
             return jsonify({"signals": [_signal_to_dict(signal)]})
         else:
-            signals = signal_generator.scan_all_pairs()
+            signals = []
+            for p in config.trading.trading_pairs:
+                try:
+                    s = signal_generator.scan_pair(p, timeframe)
+                    signals.append(s)
+                except Exception:
+                    continue
+            signals.sort(key=lambda s: s.quality_score, reverse=True)
             return jsonify({
                 "signals": [_signal_to_dict(s) for s in signals],
                 "timestamp": datetime.now().isoformat(),
