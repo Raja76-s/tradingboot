@@ -411,7 +411,7 @@
                 const gradeLabel = s.grade === 'A' ? '⭐ Grade A — BEST' : s.grade === 'B' ? 'Grade B — GOOD' : s.grade === 'C' ? 'Grade C — WEAK' : 'SKIP';
                 const rrLabel = s.risk_reward >= 2 ? '✅ GOOD' : s.risk_reward >= 1.5 ? '⚠️ OK' : '❌ WEAK';
                 return `
-                <div class="card signal-card ${s.action.toLowerCase()}" onclick="openChart('${s.pair}', signalMap['${s.pair}'])" style="cursor:pointer;">
+                <div class="card signal-card ${s.action.toLowerCase()}" onclick="openChart('${s.pair}', signalMap['${s.pair}']); showDetails('${s.pair}');" style="cursor:pointer;">
                     <div class="signal-header">
                         <span class="pair-name">${s.pair}</span>
                         <span class="action-badge ${s.action.toLowerCase()}">${s.action}</span>
@@ -510,22 +510,43 @@
                 document.getElementById('detailsPair').textContent = pair;
                 const list = document.getElementById('indicatorList');
 
-                let html = '';
-                if (data.indicators) {
-                    html += data.indicators.map(i => `
+                let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+
+                // SMC signals first
+                const smcInds = (data.indicators || []).filter(i => i.name.startsWith('SMC:'));
+                const normalInds = (data.indicators || []).filter(i => !i.name.startsWith('SMC:'));
+
+                if (smcInds.length > 0) {
+                    html += `<div style="grid-column:1/-1;color:#58a6ff;font-weight:bold;margin-top:8px;">🏦 Smart Money Signals:</div>`;
+                    html += smcInds.map(i => `
+                        <div class="indicator-item" style="grid-column:1/-1;">
+                            <span style="color:#f0f6fc;">${i.name}</span>
+                            <span class="indicator-signal ${i.signal}">${i.signal}</span>
+                        </div>
+                        <div style="grid-column:1/-1;font-size:11px;color:#8b949e;padding:0 0 4px 8px;">${i.details}</div>
+                    `).join('');
+                }
+
+                if (normalInds.length > 0) {
+                    html += `<div style="grid-column:1/-1;color:#58a6ff;font-weight:bold;margin-top:8px;">📊 Indicators:</div>`;
+                    html += normalInds.map(i => `
                         <div class="indicator-item">
                             <span>${i.name}</span>
                             <span class="indicator-signal ${i.signal}">${i.signal}</span>
                         </div>
                     `).join('');
                 }
+
+                html += '</div>';
+
                 if (data.patterns && data.patterns.length > 0) {
-                    html += '<div style="margin-top:10px; color:#58a6ff; font-weight:bold;">Patterns Detected:</div>';
+                    html += '<div style="margin-top:12px;color:#58a6ff;font-weight:bold;">🕯️ Patterns:</div>';
                     html += data.patterns.map(p => `
                         <div class="indicator-item">
                             <span>${p.name} (${Math.round(p.confidence*100)}%)</span>
                             <span class="indicator-signal ${p.signal}">${p.signal}</span>
                         </div>
+                        <div style="font-size:11px;color:#8b949e;padding:0 0 4px 8px;">${p.description}</div>
                     `).join('');
                 }
 
