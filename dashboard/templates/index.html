@@ -427,6 +427,16 @@
                         <span style="font-size:12px;font-weight:bold;color:${gradeColor};">${gradeLabel}</span>
                         <span style="font-size:12px;color:#8b949e;">Quality: <b style="color:#f0f6fc;">${s.quality_score}/100</b></span>
                     </div>
+                    <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 12px;margin-bottom:8px;">
+                        <div style="font-size:11px;color:#8b949e;margin-bottom:4px;">👑 KingTrade Indicator</div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-size:20px;font-weight:bold;color:${s.king_trade_score>=50?'#3fb950':s.king_trade_score<=-50?'#f85149':'#d29922'};">${s.king_trade_score>0?'+':''}${s.king_trade_score}</span>
+                            <span style="font-size:13px;font-weight:bold;color:${s.king_trade_score>=50?'#3fb950':s.king_trade_score<=-50?'#f85149':'#d29922'};">${s.king_trade_signal}</span>
+                        </div>
+                        <div style="height:6px;background:#21262d;border-radius:3px;margin-top:6px;">
+                            <div style="height:100%;border-radius:3px;width:${Math.abs(s.king_trade_score)}%;background:${s.king_trade_score>=50?'#3fb950':s.king_trade_score<=-50?'#f85149':'#d29922'};"></div>
+                        </div>
+                    </div>
                     <div class="confidence-bar">
                         <div class="confidence-fill ${s.confidence >= 65 ? 'high' : s.confidence >= 45 ? 'medium' : 'low'}"
                              style="width: ${s.confidence}%"></div>

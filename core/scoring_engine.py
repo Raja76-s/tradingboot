@@ -12,6 +12,7 @@ import pandas as pd
 
 from config.settings import StrategyConfig
 from core.indicators import IndicatorEngine, IndicatorResult, Signal
+from core.kingtrade import KingTradeIndicator, KingTradeResult
 from core.patterns import CandlestickPatterns, PatternResult
 from core.smc import SmartMoneyConcepts
 
@@ -39,6 +40,9 @@ class TradeSignal:
     quality_score: float = 0.0   # final rank: confidence + RR + volume
     stop_loss_pct: float = 0.0   # how far stop is from entry (%)
     grade: str = ""              # A / B / C / SKIP
+    king_trade_score: float = 0.0
+    king_trade_signal: str = ""
+    king_trade_details: str = ""
 
 
 SIGNAL_SCORES = {
@@ -79,6 +83,7 @@ class ScoringEngine:
         self.indicator_engine = IndicatorEngine(config)
         self.pattern_detector = CandlestickPatterns()
         self.smc = SmartMoneyConcepts()
+        self.kingtrade = KingTradeIndicator()
 
     def analyze(
         self,
@@ -88,9 +93,8 @@ class ScoringEngine:
     ) -> TradeSignal:
         indicator_results = self.indicator_engine.compute_all(df)
         pattern_results = self.pattern_detector.detect_all(df)
-        smc_results = self.smc.analyze(df)  # Smart Money signals
-
-        # Merge SMC into indicator results for display
+        smc_results = self.smc.analyze(df)
+        kt = self.kingtrade.compute(df)
         all_indicator_results = indicator_results + smc_results
 
         # Category-based scoring — trend/momentum/volume/smc each get equal weight
@@ -190,6 +194,13 @@ class ScoringEngine:
         if vol_spike and vol_spike.value >= 1.5:
             confidence = min(100, confidence + 5)
 
+        # KingTrade score blended into confidence
+        # KingTrade is -100 to +100, normalize to 0-100
+        kt_confidence = int((kt.score + 100) / 2)
+        # Blend: 70% existing confidence + 30% KingTrade
+        confidence = int(confidence * 0.7 + kt_confidence * 0.3)
+        confidence = max(0, min(100, confidence))
+
         current_price = df["close"].iloc[-1]
         atr_val = self._calculate_atr(df)
 
@@ -282,6 +293,9 @@ class ScoringEngine:
             quality_score=quality,
             stop_loss_pct=round(sl_pct, 2),
             grade=grade,
+            king_trade_score=kt.score,
+            king_trade_signal=kt.signal,
+            king_trade_details=kt.details,
         )
 
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
