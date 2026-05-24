@@ -65,12 +65,19 @@ def scan_markets():
     try:
         if pair:
             signal = signal_generator.scan_pair(pair, timeframe)
+            # Replace entry price with live CoinDCX price
+            live = data_fetcher.get_live_price(pair)
+            if live:
+                signal.entry_price = live
             return jsonify({"signals": [_signal_to_dict(signal)]})
         else:
             signals = []
             for p in config.trading.trading_pairs:
                 try:
                     s = signal_generator.scan_pair(p, timeframe)
+                    live = data_fetcher.get_live_price(p)
+                    if live:
+                        s.entry_price = live
                     signals.append(s)
                 except Exception:
                     continue
