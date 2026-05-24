@@ -36,17 +36,13 @@ TRACKED_PAIRS = config.trading.trading_pairs
 
 @app.route("/api/live-prices")
 def live_prices():
-    """Fetch real-time prices from CoinDCX ticker (works on PythonAnywhere)."""
-    symbols = [p.replace("_", "").upper() for p in TRACKED_PAIRS]
+    """Fetch real-time prices from CoinDCX via DataFetcher (proxy already configured)."""
     try:
-        resp = requests.get(
-            "https://api.coindcx.com/exchange/ticker",
-            proxies={"http": "http://proxy.server:3128", "https": "http://proxy.server:3128"},
-            timeout=8,
-        )
-        resp.raise_for_status()
-        all_prices = {t["market"]: float(t["last_price"]) for t in resp.json() if "market" in t}
-        prices = {sym: all_prices[sym] for sym in symbols if sym in all_prices}
+        tickers = data_fetcher.get_all_tickers()
+        symbols = [p.replace("_", "").upper() for p in TRACKED_PAIRS]
+        prices = {sym: tickers[sym] for sym in symbols if sym in tickers}
+        if not prices:
+            raise ValueError("No prices found")
         return jsonify({"prices": prices, "source": "CoinDCX", "ts": datetime.now().isoformat()})
     except Exception as e:
         return jsonify({"prices": {}, "source": "error", "error": str(e)})

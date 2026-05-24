@@ -96,14 +96,31 @@ class DataFetcher:
     def _fetch_okx(self, pair: str, interval: str, limit: int) -> pd.DataFrame | None:
         try:
             symbol = pair[:-4] + "-" + pair[-4:]
-            url = (
-                f"https://www.okx.com/api/v5/market/candles"
-                f"?instId={symbol}&bar={OKX_INTERVAL.get(interval, '15m')}"
-                f"&limit={min(limit, 300)}"
-            )
-            r = requests.get(url, proxies=PROXIES, timeout=15)
-            data = r.json()
-            if data.get("code") != "0" or not data.get("data"):
+            bar = OKX_INTERVAL.get(interval, "15m")
+            all_rows = []
+            after = None  # pagination cursor
+            remaining = limit
+
+            while remaining > 0:
+                fetch = min(remaining, 300)
+                url = (
+                    f"https://www.okx.com/api/v5/market/history-candles"
+                    f"?instId={symbol}&bar={bar}&limit={fetch}"
+                )
+                if after:
+                    url += f"&after={after}"
+                r = requests.get(url, proxies=PROXIES, timeout=15)
+                data = r.json()
+                if data.get("code") != "0" or not data.get("data"):
+                    break
+                batch = data["data"]
+                all_rows.extend(batch)
+                remaining -= len(batch)
+                if len(batch) < fetch:
+                    break  # no more data
+                after = batch[-1][0]  # oldest timestamp for next page
+
+            if not all_rows:
                 return None
             rows = [
                 {
@@ -112,13 +129,24 @@ class DataFetcher:
                     "low": float(c[3]), "close": float(c[4]),
                     "volume": float(c[5]),
                 }
-                for c in reversed(data["data"])
+                for c in all_rows
             ]
-            return pd.DataFrame(rows).set_index("timestamp")[["open", "high", "low", "close", "volume"]]
+            df = pd.DataFrame(rows).set_index("timestamp")
+            df = df.sort_index()
+            return df[["open", "high", "low", "close", "volume"]]
         except Exception:
             return None
 
     def fetch_ohlcv(self, pair: str, interval: str = "15m", limit: int = 500) -> pd.DataFrame:
+        # For large historical requests (backtest), use OKX first (better history)
+        if limit > 300:
+            df = self._fetch_okx(pair, interval, limit)
+            if df is not None and len(df) >= 50:
+                self.last_data_source = "OKX+CoinDCX"
+                self._patch_live_price(df, pair)
+                return df
+
+        # Normal: KuCoin first
         df = self._fetch_kucoin(pair, interval, limit)
         if df is not None and len(df) >= 50:
             self.last_data_source = "KuCoin+CoinDCX"
@@ -146,7 +174,18 @@ class DataFetcher:
         return result
 
     def get_all_tickers(self) -> dict:
-        return {k: float(v["last_price"]) for k, v in self._get_coindcx_tickers().items()}
+        # Return from live price poller directly
+        if _live_prices:
+            return dict(_live_prices)
+        # Fallback: fetch once
+        try:
+            r = requests.get(
+                "https://api.coindcx.com/exchange/ticker",
+                proxies=PROXIES, timeout=8,
+            )
+            return {t["market"]: float(t["last_price"]) for t in r.json() if "market" in t and "last_price" in t}
+        except Exception:
+            return {}
 
     def generate_sample_data(self, periods: int = 500, start_price: float = 50000.0) -> pd.DataFrame:
         np.random.seed(42)
