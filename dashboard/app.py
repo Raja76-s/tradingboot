@@ -76,8 +76,21 @@ def scan_markets():
                 try:
                     s = signal_generator.scan_pair(p, timeframe)
                     live = data_fetcher.get_live_price(p)
-                    if live:
+                    if live and live > 0:
                         s.entry_price = live
+                        # Recalculate SL/TP based on live price
+                        risk = abs(live - s.stop_loss)
+                        if s.action == "BUY":
+                            s.stop_loss = round(live - risk, 4)
+                            s.take_profit_1 = round(live + risk * 1.5, 4)
+                            s.take_profit_2 = round(live + risk * 3.0, 4)
+                        elif s.action == "SELL":
+                            s.stop_loss = round(live + risk, 4)
+                            s.take_profit_1 = round(live - risk * 1.5, 4)
+                            s.take_profit_2 = round(live - risk * 3.0, 4)
+                        if risk > 0:
+                            s.risk_reward_ratio = round(abs(s.take_profit_1 - live) / risk, 2)
+                            s.stop_loss_pct = round(risk / live * 100, 2)
                     signals.append(s)
                 except Exception:
                     continue

@@ -195,9 +195,7 @@ class ScoringEngine:
             confidence = min(100, confidence + 5)
 
         # KingTrade score blended into confidence
-        # KingTrade is -100 to +100, normalize to 0-100
         kt_confidence = int((kt.score + 100) / 2)
-        # Blend: 70% existing confidence + 30% KingTrade
         confidence = int(confidence * 0.7 + kt_confidence * 0.3)
         confidence = max(0, min(100, confidence))
 
@@ -206,26 +204,26 @@ class ScoringEngine:
 
         if confidence >= 60:
             action = "BUY"
-            # SL = below entry, minimum 1x ATR, maximum 3x ATR
-            atr_sl    = current_price - (atr_val * 2.0)
-            swing_sl  = df["low"].rolling(20).min().iloc[-1]
-            stop_loss = max(atr_sl, swing_sl)   # whichever is HIGHER (closer to entry)
-            # Ensure SL is always BELOW entry
+            atr_sl   = current_price - (atr_val * 2.0)
+            swing_sl = df["low"].rolling(20).min().iloc[-1]
+            # SL must be BELOW entry — take the higher of the two (closer to entry)
+            stop_loss = max(atr_sl, swing_sl)
+            # Final safety check — SL must NEVER be above entry for BUY
             if stop_loss >= current_price:
                 stop_loss = current_price - (atr_val * 2.0)
-            tp1 = current_price + (atr_val * 3.0)
-            tp2 = current_price + (atr_val * 6.0)
+            tp1 = current_price + abs(current_price - stop_loss) * 1.5  # 1:1.5 RR
+            tp2 = current_price + abs(current_price - stop_loss) * 3.0  # 1:3 RR
         elif confidence <= 40:
             action = "SELL"
-            # SL = above entry
-            atr_sl    = current_price + (atr_val * 2.0)
-            swing_sl  = df["high"].rolling(20).max().iloc[-1]
-            stop_loss = min(atr_sl, swing_sl)   # whichever is LOWER (closer to entry)
-            # Ensure SL is always ABOVE entry
+            atr_sl   = current_price + (atr_val * 2.0)
+            swing_sl = df["high"].rolling(20).max().iloc[-1]
+            # SL must be ABOVE entry — take the lower of the two (closer to entry)
+            stop_loss = min(atr_sl, swing_sl)
+            # Final safety check — SL must NEVER be below entry for SELL
             if stop_loss <= current_price:
                 stop_loss = current_price + (atr_val * 2.0)
-            tp1 = current_price - (atr_val * 3.0)
-            tp2 = current_price - (atr_val * 6.0)
+            tp1 = current_price - abs(stop_loss - current_price) * 1.5
+            tp2 = current_price - abs(stop_loss - current_price) * 3.0
         else:
             action = "HOLD"
             stop_loss = current_price - (atr_val * 2.0)
