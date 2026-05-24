@@ -206,21 +206,24 @@ class ScoringEngine:
 
         if confidence >= 60:
             action = "BUY"
-            # Chandelier Exit SL — highest high of last 22 candles minus 3x ATR
-            # Proven by Chuck LeBeau, better than fixed ATR multiplier
-            highest_22 = df["high"].rolling(22).max().iloc[-1]
-            chandelier_sl = highest_22 - (atr_val * 3.0)
-            # Use chandelier if it's tighter than 2x ATR, else use 2x ATR
-            atr_sl = current_price - (atr_val * 2.0)
-            stop_loss = max(chandelier_sl, atr_sl)  # tighter of the two
-            tp1 = current_price + (atr_val * 3.0)   # 1:1.5 RR
-            tp2 = current_price + (atr_val * 6.0)   # 1:3 RR
+            # SL = below entry, minimum 1x ATR, maximum 3x ATR
+            atr_sl    = current_price - (atr_val * 2.0)
+            swing_sl  = df["low"].rolling(20).min().iloc[-1]
+            stop_loss = max(atr_sl, swing_sl)   # whichever is HIGHER (closer to entry)
+            # Ensure SL is always BELOW entry
+            if stop_loss >= current_price:
+                stop_loss = current_price - (atr_val * 2.0)
+            tp1 = current_price + (atr_val * 3.0)
+            tp2 = current_price + (atr_val * 6.0)
         elif confidence <= 40:
             action = "SELL"
-            lowest_22 = df["low"].rolling(22).min().iloc[-1]
-            chandelier_sl = lowest_22 + (atr_val * 3.0)
-            atr_sl = current_price + (atr_val * 2.0)
-            stop_loss = min(chandelier_sl, atr_sl)
+            # SL = above entry
+            atr_sl    = current_price + (atr_val * 2.0)
+            swing_sl  = df["high"].rolling(20).max().iloc[-1]
+            stop_loss = min(atr_sl, swing_sl)   # whichever is LOWER (closer to entry)
+            # Ensure SL is always ABOVE entry
+            if stop_loss <= current_price:
+                stop_loss = current_price + (atr_val * 2.0)
             tp1 = current_price - (atr_val * 3.0)
             tp2 = current_price - (atr_val * 6.0)
         else:
