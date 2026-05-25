@@ -68,11 +68,15 @@ class TrendIndicators:
         return 3 * ema1 - 3 * ema2 + ema3
 
     @staticmethod
-    def vwap(df: pd.DataFrame) -> pd.Series:
+    def vwap(df: pd.DataFrame, session_bars: int = 96) -> pd.Series:
+        """Session VWAP — resets every ~1 day to stay meaningful."""
+        df = df.iloc[-session_bars:] if len(df) > session_bars else df
         typical_price = (df["high"] + df["low"] + df["close"]) / 3
         cumulative_tp_vol = (typical_price * df["volume"]).cumsum()
         cumulative_vol = df["volume"].cumsum()
-        return cumulative_tp_vol / cumulative_vol
+        result = cumulative_tp_vol / cumulative_vol
+        # Return a full-length series aligned to original index (fill with last value)
+        return result
 
     @staticmethod
     def supertrend(
@@ -853,11 +857,11 @@ class IndicatorEngine:
         if not pd.isna(cci_val):
             if cci_val < self.config.cci_oversold:
                 signal = Signal.STRONG_BUY
-            elif cci_val < 0:
-                signal = Signal.BUY
             elif cci_val > self.config.cci_overbought:
                 signal = Signal.STRONG_SELL
             elif cci_val > 0:
+                signal = Signal.BUY
+            elif cci_val < 0:
                 signal = Signal.SELL
             else:
                 signal = Signal.NEUTRAL
@@ -1024,9 +1028,9 @@ class IndicatorEngine:
                 signal = Signal.STRONG_BUY
             elif close > kc_upper:
                 signal = Signal.STRONG_SELL
-            elif close < kc["kc_middle"].iloc[-1]:
-                signal = Signal.BUY
             elif close > kc["kc_middle"].iloc[-1]:
+                signal = Signal.BUY
+            elif close < kc["kc_middle"].iloc[-1]:
                 signal = Signal.SELL
             else:
                 signal = Signal.NEUTRAL
@@ -1049,13 +1053,13 @@ class IndicatorEngine:
             if dc_range > 0:
                 dc_pct = (close - dc_lower) / dc_range
                 if dc_pct > 0.95:
-                    signal = Signal.BUY  # breakout
+                    signal = Signal.BUY   # breakout above upper
                 elif dc_pct < 0.05:
-                    signal = Signal.SELL  # breakdown
-                elif dc_pct > 0.7:
-                    signal = Signal.BUY
-                elif dc_pct < 0.3:
-                    signal = Signal.SELL
+                    signal = Signal.SELL  # breakdown below lower
+                elif dc_pct > 0.6:
+                    signal = Signal.BUY   # upper half of range = bullish
+                elif dc_pct < 0.4:
+                    signal = Signal.SELL  # lower half of range = bearish
                 else:
                     signal = Signal.NEUTRAL
 

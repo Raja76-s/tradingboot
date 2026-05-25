@@ -162,12 +162,11 @@ class ScoringEngine:
         confidence = int(min(100, max(0, (normalized + 2) * 25)))
 
         # --- Core Confluence Filter ---
-        # If fewer than 3 of the 5 core indicators agree, cap confidence at 55
-        # This prevents weak signals from reaching the BUY/SELL threshold
+        # If fewer than 2 of the 5 core indicators agree, cap confidence at 58
         if core_seen >= 3:
             dominant_core = max(core_buy, core_sell)
-            if dominant_core < 3:
-                confidence = min(confidence, 55)  # not enough agreement → HOLD
+            if dominant_core < 2:
+                confidence = min(confidence, 58)  # not enough agreement → HOLD
             elif dominant_core == core_seen:  # all core agree → bonus
                 confidence = min(100, confidence + 8)
 
@@ -194,9 +193,9 @@ class ScoringEngine:
         if vol_spike and vol_spike.value >= 1.5:
             confidence = min(100, confidence + 5)
 
-        # KingTrade score blended into confidence
+        # KingTrade score blended into confidence (10% only — avoids double-counting same indicators)
         kt_confidence = int((kt.score + 100) / 2)
-        confidence = int(confidence * 0.7 + kt_confidence * 0.3)
+        confidence = int(confidence * 0.9 + kt_confidence * 0.1)
         confidence = max(0, min(100, confidence))
 
         current_price = df["close"].iloc[-1]
