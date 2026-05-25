@@ -112,16 +112,16 @@ COIN_PROFILES: dict[str, CoinProfile] = {
         name="Polkadot",
         category="mid_cap",
         volatility="high",
-        recommended_timeframe="15m",
-        recommended_confidence=70,
-        description="Follows major market trends with lag.",
+        recommended_timeframe="1h",  # 1h filters out noise better than 15m for DOT
+        recommended_confidence=65,   # lowered from 70 — DOT rarely hits 70 due to lag
+        description="Lags BTC/ETH. Only trade when ADX > 20 confirms real trend.",
         best_indicators=[
-            "EMA Crossover", "Supertrend", "RSI", "MACD",
-            "Parabolic SAR", "ADX",
+            "ADX", "Supertrend", "EMA Crossover (9/21)", "MACD",
+            "RSI", "Ichimoku Cloud",
         ],
         risk_per_trade_pct=1.0,
-        stop_loss_pct=3.0,
-        take_profit_pct=6.0,
+        stop_loss_pct=3.5,   # wider SL for DOT's volatility
+        take_profit_pct=7.0, # 1:2 RR minimum
     ),
     "MATICUSDT": CoinProfile(
         symbol="MATICUSDT",

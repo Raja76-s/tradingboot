@@ -13,6 +13,7 @@ from colorama import Fore, Style
 from config.settings import AppConfig
 from core.data_fetcher import DataFetcher
 from core.scoring_engine import MultiTimeframeScoringEngine, ScoringEngine, TradeSignal
+from strategies.coin_strategies import get_recommended_config
 
 
 class SignalGenerator:
@@ -30,11 +31,13 @@ class SignalGenerator:
         pair: str,
         timeframe: str | None = None,
     ) -> TradeSignal:
+        coin_config = get_recommended_config(pair, self.config.strategy)
         if timeframe is None:
-            timeframe = self.config.strategy.default_timeframe
+            timeframe = coin_config.default_timeframe
 
         df = self.data_fetcher.fetch_ohlcv(pair, timeframe, 500)
-        signal = self.scoring_engine.analyze(df, pair, timeframe)
+        engine = ScoringEngine(coin_config)
+        signal = engine.analyze(df, pair, timeframe)
         self.signal_history.append(signal)
         return signal
 

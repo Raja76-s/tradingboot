@@ -85,6 +85,9 @@ class ScoringEngine:
         self.smc = SmartMoneyConcepts()
         self.kingtrade = KingTradeIndicator()
 
+    # Coins that lag the market and need a relaxed confluence cap to escape HOLD
+    _LAGGING_COINS = {"DOTUSDT", "ADAUSDT", "MATICUSDT"}
+
     def analyze(
         self,
         df: pd.DataFrame,
@@ -161,12 +164,20 @@ class ScoringEngine:
         # Convert -2..+2 range to 0..100 confidence
         confidence = int(min(100, max(0, (normalized + 2) * 25)))
 
+        # --- ADX Momentum Gate ---
+        # If there is no trend (ADX < 20), suppress to HOLD — avoids choppy signals
+        adx_result = next((r for r in indicator_results if r.name == "ADX"), None)
+        if adx_result and adx_result.value < 20:
+            confidence = max(41, min(59, confidence))  # force into HOLD zone
+
         # --- Core Confluence Filter ---
-        # If fewer than 2 of the 5 core indicators agree, cap confidence at 58
+        # Lagging coins (DOT, ADA, MATIC) use a lower cap so they can escape HOLD
+        # when at least 2 core indicators agree
+        confluence_cap = 55 if pair.upper() in self._LAGGING_COINS else 58
         if core_seen >= 3:
             dominant_core = max(core_buy, core_sell)
             if dominant_core < 2:
-                confidence = min(confidence, 58)  # not enough agreement → HOLD
+                confidence = min(confidence, confluence_cap)  # not enough agreement → HOLD
             elif dominant_core == core_seen:  # all core agree → bonus
                 confidence = min(100, confidence + 8)
 
