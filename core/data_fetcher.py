@@ -22,6 +22,7 @@ OKX_INTERVAL = {
 
 # Global price store — updated every 2s by background thread
 _live_prices: dict[str, float] = {}
+_live_tickers: dict[str, dict] = {}
 
 
 def _start_price_poller() -> None:
@@ -35,7 +36,14 @@ def _start_price_poller() -> None:
                 )
                 for t in r.json():
                     if "market" in t and "last_price" in t:
-                        _live_prices[t["market"]] = float(t["last_price"])
+                        market = t["market"]
+                        last_price = float(t["last_price"])
+                        _live_prices[market] = last_price
+                        _live_tickers[market] = {
+                            **t,
+                            "last_price": last_price,
+                            "volume": float(t.get("volume", 0) or 0),
+                        }
             except Exception:
                 pass
             time.sleep(2)
@@ -174,18 +182,49 @@ class DataFetcher:
         return result
 
     def get_all_tickers(self) -> dict:
-        # Return from live price poller directly
-        if _live_prices:
-            return dict(_live_prices)
+        # Return the richer live payload when available.
+        if _live_tickers:
+            return dict(_live_tickers)
         # Fallback: fetch once
         try:
             r = requests.get(
                 "https://api.coindcx.com/exchange/ticker",
                 proxies=PROXIES, timeout=8,
             )
-            return {t["market"]: float(t["last_price"]) for t in r.json() if "market" in t and "last_price" in t}
+            tickers = {}
+            for t in r.json():
+                if "market" not in t or "last_price" not in t:
+                    continue
+                market = t["market"]
+                tickers[market] = {
+                    **t,
+                    "last_price": float(t["last_price"]),
+                    "volume": float(t.get("volume", 0) or 0),
+                }
+            return tickers
         except Exception:
             return {}
+
+    def get_market_universe(
+        self,
+        quote_suffixes: tuple[str, ...] = ("USDT", "INR", "BTC"),
+    ) -> list[dict]:
+        """Return all known markets ordered by 24h volume, highest first."""
+        tickers = self.get_all_tickers()
+        universe: list[dict] = []
+
+        for market, ticker in tickers.items():
+            if quote_suffixes and not market.endswith(quote_suffixes):
+                continue
+            volume = float(ticker.get("volume", 0) or 0)
+            universe.append({
+                "market": market,
+                "last_price": float(ticker.get("last_price", 0) or 0),
+                "volume": volume,
+            })
+
+        universe.sort(key=lambda item: item["volume"], reverse=True)
+        return universe
 
     def generate_sample_data(self, periods: int = 500, start_price: float = 50000.0) -> pd.DataFrame:
         np.random.seed(42)

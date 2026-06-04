@@ -40,7 +40,11 @@ def live_prices():
     try:
         tickers = data_fetcher.get_all_tickers()
         symbols = [p.replace("_", "").upper() for p in TRACKED_PAIRS]
-        prices = {sym: tickers[sym] for sym in symbols if sym in tickers}
+        prices = {
+            sym: tickers[sym]["last_price"]
+            for sym in symbols
+            if sym in tickers and "last_price" in tickers[sym]
+        }
         if not prices:
             raise ValueError("No prices found")
         return jsonify({"prices": prices, "source": "CoinDCX", "ts": datetime.now().isoformat()})
@@ -60,7 +64,12 @@ def scan_markets():
 
     try:
         if pair:
-            signal = signal_generator.scan_pair(pair, timeframe)
+            market = data_fetcher.get_all_tickers().get(pair.upper(), {})
+            signal = signal_generator.scan_pair(
+                pair,
+                timeframe,
+                market_volume=market.get("volume"),
+            )
             # Replace entry price with live CoinDCX price
             live = data_fetcher.get_live_price(pair)
             if live:
@@ -68,10 +77,9 @@ def scan_markets():
             return jsonify({"signals": [_signal_to_dict(signal)]})
         else:
             signals = []
-            for p in config.trading.trading_pairs:
+            for s in signal_generator.scan_all_pairs(timeframe=timeframe):
                 try:
-                    s = signal_generator.scan_pair(p, timeframe)
-                    live = data_fetcher.get_live_price(p)
+                    live = data_fetcher.get_live_price(s.pair)
                     if live and live > 0:
                         s.entry_price = live
                         # Recalculate SL/TP based on live price
@@ -90,7 +98,6 @@ def scan_markets():
                     signals.append(s)
                 except Exception:
                     continue
-            signals.sort(key=lambda s: s.quality_score, reverse=True)
             return jsonify({
                 "signals": [_signal_to_dict(s) for s in signals],
                 "timestamp": datetime.now().isoformat(),
@@ -229,6 +236,8 @@ def _signal_to_dict(signal: TradeSignal) -> dict:
         "king_trade_score": signal.king_trade_score,
         "king_trade_signal": signal.king_trade_signal,
         "king_trade_details": signal.king_trade_details,
+        "market_volume": getattr(signal, "market_volume", 0.0),
+        "volume_rank": getattr(signal, "volume_rank", None),
     }
 
 

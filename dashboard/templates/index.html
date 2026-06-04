@@ -419,11 +419,15 @@
                 const gradeColor = s.grade === 'A' ? '#3fb950' : s.grade === 'B' ? '#d29922' : '#8b949e';
                 const gradeLabel = s.grade === 'A' ? '⭐ Grade A — BEST' : s.grade === 'B' ? 'Grade B — GOOD' : s.grade === 'C' ? 'Grade C — WEAK' : 'SKIP';
                 const rrLabel = s.risk_reward >= 2 ? '✅ GOOD' : s.risk_reward >= 1.5 ? '⚠️ OK' : '❌ WEAK';
+                const volumeLabel = s.volume_rank ? `Volume Rank #${s.volume_rank}` : 'Volume-ranked';
                 return `
                 <div class="card signal-card ${s.action.toLowerCase()}" onclick="openChart('${s.pair}', signalMap['${s.pair}']); showDetails('${s.pair}');" style="cursor:pointer;">
                     <div class="signal-header">
                         <span class="pair-name">${s.pair}</span>
-                        <span class="action-badge ${s.action.toLowerCase()}">${s.action}</span>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                            <span style="font-size:11px;color:#8b949e;">${volumeLabel}</span>
+                            <span class="action-badge ${s.action.toLowerCase()}">${s.action}</span>
+                        </div>
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                         <span style="font-size:12px;font-weight:bold;color:${gradeColor};">${gradeLabel}</span>
@@ -448,6 +452,7 @@
                     </div>
                     <div class="signal-details">
                         <div class="row"><span class="label">Entry Price</span><span class="value">${s.entry_price.toLocaleString()}</span></div>
+                        <div class="row"><span class="label">24h Volume</span><span class="value">${Number(s.market_volume || 0).toLocaleString()}</span></div>
                         <div class="row"><span class="label">Stop-Loss</span><span class="value" style="color:#f85149;">${s.stop_loss.toLocaleString()} (-${s.stop_loss_pct}%)</span></div>
                         <div class="row"><span class="label">Target 1</span><span class="value" style="color:#3fb950;">${s.take_profit_1.toLocaleString()}</span></div>
                         <div class="row"><span class="label">Target 2</span><span class="value" style="color:#3fb950;">${s.take_profit_2.toLocaleString()}</span></div>

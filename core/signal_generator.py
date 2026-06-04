@@ -30,6 +30,8 @@ class SignalGenerator:
         self,
         pair: str,
         timeframe: str | None = None,
+        market_volume: float | None = None,
+        volume_rank: int | None = None,
     ) -> TradeSignal:
         coin_config = get_recommended_config(pair, self.config.strategy)
         if timeframe is None:
@@ -38,6 +40,10 @@ class SignalGenerator:
         df = self.data_fetcher.fetch_ohlcv(pair, timeframe, 500)
         engine = ScoringEngine(coin_config)
         signal = engine.analyze(df, pair, timeframe)
+        if market_volume is not None:
+            signal.market_volume = float(market_volume)
+        if volume_rank is not None:
+            signal.volume_rank = int(volume_rank)
         self.signal_history.append(signal)
         return signal
 
@@ -51,22 +57,47 @@ class SignalGenerator:
 
     def scan_all_pairs(
         self,
+        timeframe: str | None = None,
         multi_timeframe: bool = False,
+        pairs: list[str] | None = None,
     ) -> list[TradeSignal]:
         signals: list[TradeSignal] = []
 
-        for pair in self.config.trading.trading_pairs:
+        if pairs is None:
+            markets = self.data_fetcher.get_market_universe()
+            pairs = [m["market"] for m in markets]
+            market_map = {m["market"]: m for m in markets}
+        else:
+            market_map = {}
+
+        for index, pair in enumerate(pairs, start=1):
             try:
                 if multi_timeframe:
                     signal = self.scan_pair_multi_tf(pair)
+                    market_volume = market_map.get(pair, {}).get("volume")
+                    if market_volume is not None:
+                        signal.market_volume = float(market_volume)
+                        signal.volume_rank = index
                 else:
-                    signal = self.scan_pair(pair)
+                    market_volume = market_map.get(pair, {}).get("volume")
+                    signal = self.scan_pair(
+                        pair,
+                        timeframe,
+                        market_volume=market_volume,
+                        volume_rank=index if market_volume is not None else None,
+                    )
                 signals.append(signal)
             except Exception as e:
                 print(f"Error scanning {pair}: {e}")
                 continue
 
-        signals.sort(key=lambda s: s.quality_score, reverse=True)
+        signals.sort(
+            key=lambda s: (
+                float(getattr(s, "market_volume", 0) or 0),
+                s.quality_score,
+            ),
+            reverse=True,
+        )
         return signals
 
     def run_continuous(
