@@ -207,7 +207,7 @@ class DataFetcher:
 
     def get_market_universe(
         self,
-        quote_suffixes: tuple[str, ...] = ("USDT", "INR", "BTC"),
+        quote_suffixes: tuple[str, ...] | None = None,
     ) -> list[dict]:
         """Return all known markets ordered by 24h volume, highest first."""
         tickers = self.get_all_tickers()

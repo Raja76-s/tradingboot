@@ -39,11 +39,15 @@ def live_prices():
     """Fetch real-time prices from CoinDCX via DataFetcher (proxy already configured)."""
     try:
         tickers = data_fetcher.get_all_tickers()
-        symbols = [p.replace("_", "").upper() for p in TRACKED_PAIRS]
+        ordered = sorted(
+            tickers.items(),
+            key=lambda item: float(item[1].get("volume", 0) or 0),
+            reverse=True,
+        )
         prices = {
-            sym: tickers[sym]["last_price"]
-            for sym in symbols
-            if sym in tickers and "last_price" in tickers[sym]
+            sym: payload["last_price"]
+            for sym, payload in ordered
+            if "last_price" in payload
         }
         if not prices:
             raise ValueError("No prices found")
