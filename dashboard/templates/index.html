@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoTrader Pro - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+        }
+        .header {
+            background: #161b22;
+            padding: 20px 30px;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { color: #58a6ff; font-size: 24px; }
+        .header .status { color: #3fb950; font-size: 14px; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px; }
+        .card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .card h3 { color: #58a6ff; margin-bottom: 15px; font-size: 16px; }
+        .signal-card {
+            border-left: 4px solid #30363d;
+            transition: all 0.3s;
+        }
+        .signal-card.buy { border-left-color: #3fb950; }
+        .signal-card.sell { border-left-color: #f85149; }
+        .signal-card.hold { border-left-color: #d29922; }
+        .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .pair-name { font-size: 18px; font-weight: bold; color: #f0f6fc; }
+        .action-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .action-badge.buy { background: #238636; color: white; }
+        .action-badge.sell { background: #da3633; color: white; }
+        .action-badge.hold { background: #9e6a03; color: white; }
+        .confidence-bar {
+            height: 8px;
+            background: #21262d;
+            border-radius: 4px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        .confidence-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+        .confidence-fill.high { background: #3fb950; }
+        .confidence-fill.medium { background: #d29922; }
+        .confidence-fill.low { background: #f85149; }
+        .signal-details { font-size: 13px; color: #8b949e; }
+        .signal-details .row { display: flex; justify-content: space-between; padding: 3px 0; }
+        .signal-details .label { color: #8b949e; }
+        .signal-details .value { color: #c9d1d9; font-weight: 500; }
+        .btn {
+            background: #238636;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #2ea043; }
+        .btn.scanning { background: #d29922; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .stat-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value { font-size: 24px; font-weight: bold; color: #f0f6fc; }
+        .stat-label { font-size: 12px; color: #8b949e; margin-top: 5px; }
+        .stat-value.positive { color: #3fb950; }
+        .stat-value.negative { color: #f85149; }
+        .loading { text-align: center; padding: 40px; color: #8b949e; }
+        .indicator-list { max-height: 300px; overflow-y: auto; }
+        .indicator-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #21262d;
+            font-size: 13px;
+        }
+        .indicator-signal { font-weight: bold; }
+        .indicator-signal.STRONG_BUY, .indicator-signal.BUY { color: #3fb950; }
+        .indicator-signal.STRONG_SELL, .indicator-signal.SELL { color: #f85149; }
+        .indicator-signal.NEUTRAL { color: #d29922; }
+        /* Chart modal */
+        .chart-modal {
+            display: none; position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%; background: rgba(0,0,0,0.85);
+            z-index: 1000; align-items: center; justify-content: center;
+        }
+        .chart-modal.open { display: flex; }
+        .chart-box {
+            background: #161b22; border: 1px solid #30363d;
+            border-radius: 10px; width: 95%; max-width: 1100px;
+            height: 80vh; display: flex; flex-direction: column;
+        }
+        .chart-header {
+            display: flex; justify-content: space-between;
+            align-items: center; padding: 12px 16px;
+            border-bottom: 1px solid #30363d;
+        }
+        .chart-header h3 { color: #58a6ff; font-size: 16px; }
+        .chart-close {
+            background: #da3633; color: white; border: none;
+            border-radius: 6px; padding: 4px 12px; cursor: pointer;
+            font-size: 14px;
+        }
+        .chart-tf-btns { display: flex; gap: 6px; }
+        .tf-btn {
+            background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+            border-radius: 4px; padding: 3px 10px; cursor: pointer;
+            font-size: 12px;
+        }
+        .tf-btn.active { background: #1d6fa4; color: white; border-color: #1d6fa4; }
+        .smc-panel {
+            padding: 8px 16px; background: #0d1117;
+            border-bottom: 1px solid #21262d;
+            display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px;
+        }
+        .smc-tag {
+            padding: 2px 8px; border-radius: 10px; font-weight: bold;
+        }
+        .smc-tag.bull { background: #0d2818; color: #3fb950; border: 1px solid #238636; }
+        .smc-tag.bear { background: #2d0f0f; color: #f85149; border: 1px solid #da3633; }
+        .smc-tag.neutral { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+        .tg-panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .tg-panel h3 { color: #58a6ff; margin-bottom: 12px; font-size: 16px; }
+        .tg-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+        .tg-badge { padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .tg-badge.ok { background: #238636; color: #fff; }
+        .tg-badge.fail { background: #da3633; color: #fff; }
+        .tg-badge.warn { background: #9e6a03; color: #fff; }
+        .tg-msg { font-size: 13px; padding: 10px 14px; border-radius: 6px; margin-top: 8px; }
+        .tg-msg.success { background: #0d2818; border: 1px solid #238636; color: #3fb950; }
+        .tg-msg.error { background: #2d0f0f; border: 1px solid #da3633; color: #f85149; }
+        .btn-tg { background: #1d6fa4; color: white; border: none; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .btn-tg:hover { background: #2188c9; }
+        .btn-tg:disabled { opacity: 0.5; cursor: not-allowed; }
+        .setup-steps { font-size: 12px; color: #8b949e; margin-top: 10px; line-height: 1.8; }
+        .setup-steps a { color: #58a6ff; }
+        /* Live price ticker */
+        .price-ticker {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        .ticker-label { font-size: 11px; color: #8b949e; margin-right: 4px; }
+        .ticker-item {
+            background: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 5px 12px;
+            font-size: 13px;
+            min-width: 130px;
+        }
+        .ticker-item .t-pair { color: #58a6ff; font-weight: bold; font-size: 11px; }
+        .ticker-item .t-price { color: #f0f6fc; font-weight: bold; }
+        .ticker-item .t-change { font-size: 11px; }
+        .ticker-item .t-change.up { color: #3fb950; }
+        .ticker-item .t-change.down { color: #f85149; }
+        .ticker-dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950;
+            display: inline-block; margin-right: 6px;
+            animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CryptoTrader Pro</h1>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <span id="dataSourceBadge" style="font-size:12px;padding:3px 10px;border-radius:12px;background:#21262d;color:#8b949e;">Data: checking...</span>
+            <select id="tfSelect" style="background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:13px;">
+                <option value="1m">1m</option>
+                <option value="5m">5m</option>
+                <option value="15m">15m</option>
+                <option value="1h" selected>1H &#x2605;</option>
+                <option value="4h">4H</option>
+                <option value="1d">1D</option>
+            </select>
+            <span class="status" id="status">Ready</span>
+            <button class="btn" id="scanBtn" onclick="scanMarkets()">Scan Markets</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalSignals">-</div>
+                <div class="stat-label">Signals Scanned</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="buySignals">-</div>
+                <div class="stat-label">Buy Signals</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="sellSignals">-</div>
+                <div class="stat-label">Sell Signals</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="bestSignal">-</div>
+                <div class="stat-label">Best Confidence</div>
+            </div>
+        </div>
+
+        <!-- Live Price Ticker -->
+        <div class="price-ticker" id="priceTicker">
+            <span><span class="ticker-dot"></span><span class="ticker-label">LIVE PRICES</span></span>
+            <span style="font-size:12px; color:#8b949e;" id="tickerStatus">Loading...</span>
+        </div>
+
+        <!-- Telegram Panel -->
+        <div class="tg-panel" id="tgPanel">
+            <h3>📱 Telegram Notifications</h3>
+            <div class="tg-row">
+                <span>Bot Token:</span>
+                <span class="tg-badge" id="tgTokenBadge">checking...</span>
+                <span>Chat ID:</span>
+                <span class="tg-badge" id="tgChatBadge">checking...</span>
+                <span>Status:</span>
+                <span class="tg-badge" id="tgEnabledBadge">checking...</span>
+                <button class="btn-tg" id="tgTestBtn" onclick="testTelegram()" disabled>Send Test Message</button>
+            </div>
+            <div id="tgResult"></div>
+            <div class="setup-steps" id="tgSetupSteps" style="display:none">
+                <b>How to set up Telegram:</b><br>
+                1. Open Telegram → message <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> → send <code>/newbot</code> → copy the token<br>
+                2. Message <a href="https://t.me/userinfobot" target="_blank" rel="noopener noreferrer">@userinfobot</a> → copy your numeric ID<br>
+                3. Open <code>c:\tradingboot\.env</code> and set:<br>
+                &nbsp;&nbsp;<code>TELEGRAM_BOT_TOKEN=your_token_here</code><br>
+                &nbsp;&nbsp;<code>TELEGRAM_CHAT_ID=your_chat_id_here</code><br>
+                4. Restart the dashboard, then click "Send Test Message"
+            </div>
+        </div>
+
+        <div class="grid" id="signalsGrid">
+            <div class="loading">Click "Scan Markets" to analyze all pairs</div>
+        </div>
+
+        <div class="card" id="detailsCard" style="display:none; margin-top: 20px;">
+            <h3>Indicator Details — <span id="detailsPair"></span></h3>
+            <div class="indicator-list" id="indicatorList"></div>
+        </div>
+    </div>
+
+    <!-- Chart Modal -->
+    <div class="chart-modal" id="chartModal">
+        <div class="chart-box">
+            <div class="chart-header">
+                <h3 id="chartTitle">Chart</h3>
+                <div class="chart-tf-btns">
+                    <button class="tf-btn active" onclick="setTF('5')">5m</button>
+                    <button class="tf-btn" onclick="setTF('15')">15m</button>
+                    <button class="tf-btn" onclick="setTF('60')">1H</button>
+                    <button class="tf-btn" onclick="setTF('240')">4H</button>
+                    <button class="tf-btn" onclick="setTF('D')">1D</button>
+                </div>
+                <button class="chart-close" onclick="closeChart()">&#x2715; Close</button>
+            </div>
+            <div class="smc-panel" id="smcPanel"></div>
+            <div id="tvChart" style="flex:1;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Load Telegram status on page load
+        async function loadTelegramStatus() {
+            try {
+                const resp = await fetch('/api/telegram/status');
+                const d = await resp.json();
+                const tokenBadge = document.getElementById('tgTokenBadge');
+                const chatBadge = document.getElementById('tgChatBadge');
+                const enabledBadge = document.getElementById('tgEnabledBadge');
+                const testBtn = document.getElementById('tgTestBtn');
+                const setupSteps = document.getElementById('tgSetupSteps');
+
+                tokenBadge.textContent = d.bot_token_set ? ('✓ ' + d.bot_token_preview) : '✗ Not Set';
+                tokenBadge.className = 'tg-badge ' + (d.bot_token_set ? 'ok' : 'fail');
+                chatBadge.textContent = d.chat_id_set ? ('✓ ' + d.chat_id) : '✗ Not Set';
+                chatBadge.className = 'tg-badge ' + (d.chat_id_set ? 'ok' : 'fail');
+                enabledBadge.textContent = d.enabled ? '✓ Ready' : '✗ Not Configured';
+                enabledBadge.className = 'tg-badge ' + (d.enabled ? 'ok' : 'fail');
+                testBtn.disabled = !d.enabled;
+                setupSteps.style.display = d.enabled ? 'none' : 'block';
+            } catch (e) {
+                document.getElementById('tgEnabledBadge').textContent = 'Error';
+            }
+        }
+
+        async function testTelegram() {
+            const btn = document.getElementById('tgTestBtn');
+            const result = document.getElementById('tgResult');
+            btn.disabled = true;
+            btn.textContent = 'Sending...';
+            result.innerHTML = '';
+            try {
+                const resp = await fetch('/api/telegram/test', {method: 'POST'});
+                const d = await resp.json();
+                result.innerHTML = `<div class="tg-msg ${d.success ? 'success' : 'error'}">${d.success ? '✅ ' + d.message : '❌ ' + d.error}</div>`;
+            } catch (e) {
+                result.innerHTML = `<div class="tg-msg error">❌ Request failed: ${e.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Test Message';
+            }
+        }
+
+        loadTelegramStatus();
+
+        // ── Live Price Ticker (updates every 3 seconds) ──────────────────
+        const prevPrices = {};
+
+        async function updateLivePrices() {
+            try {
+                const resp = await fetch('/api/live-prices');
+                const d = await resp.json();
+                if (!d.prices || Object.keys(d.prices).length === 0) {
+                    document.getElementById('tickerStatus').textContent = 'Price feed unavailable';
+                    return;
+                }
+                const ticker = document.getElementById('priceTicker');
+                ticker.querySelectorAll('.ticker-item').forEach(el => el.remove());
+
+                for (const [sym, price] of Object.entries(d.prices)) {
+                    const prev = prevPrices[sym];
+                    const changeClass = prev ? (price > prev ? 'up' : price < prev ? 'down' : '') : '';
+                    const changeArrow = prev ? (price > prev ? '▲' : price < prev ? '▼' : '—') : '';
+                    prevPrices[sym] = price;
+                    const item = document.createElement('div');
+                    item.className = 'ticker-item';
+                    item.innerHTML = `<div class="t-pair">${sym}</div>
+                        <div class="t-price">${price.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4})}</div>
+                        <div class="t-change ${changeClass}">${changeArrow}</div>`;
+                    ticker.appendChild(item);
+                }
+                document.getElementById('tickerStatus').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+            } catch(e) {
+                document.getElementById('tickerStatus').textContent = 'Error fetching prices';
+            }
+        }
+        updateLivePrices();
+        setInterval(updateLivePrices, 3000);
+        // ────────────────────────────────────────────────────────────────
+
+        async function scanMarkets() {
+            const btn = document.getElementById('scanBtn');
+            const status = document.getElementById('status');
+            btn.textContent = 'Scanning...';
+            btn.classList.add('scanning');
+            status.textContent = 'Scanning markets...';
+
+            try {
+                const tf = document.getElementById('tfSelect').value;
+                const resp = await fetch('/api/scan?timeframe=' + tf);
+                const data = await resp.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                renderSignals(data.signals);
+                updateStats(data.signals);
+                status.textContent = 'Last scan: ' + new Date().toLocaleTimeString();
+                // refresh data source badge
+                fetch('/api/data-source').then(r=>r.json()).then(d=>{
+                    const b = document.getElementById('dataSourceBadge');
+                    b.textContent = '📡 Data: ' + d.source;
+                    b.style.background = d.is_live ? '#0d2818' : '#2d0f0f';
+                    b.style.color = d.is_live ? '#3fb950' : '#f85149';
+                    b.style.border = '1px solid ' + (d.is_live ? '#238636' : '#da3633');
+                }).catch(()=>{});
+            } catch (e) {
+                alert('Scan failed: ' + e.message);
+            } finally {
+                btn.textContent = 'Scan Markets';
+                btn.classList.remove('scanning');
+            }
+        }
+
+        function renderSignals(signals) {
+            const grid = document.getElementById('signalsGrid');
+            // Build signal map for chart access
+            window.signalMap = {};
+            signals.forEach(s => window.signalMap[s.pair] = s);
+            grid.innerHTML = signals.map(s => {
+                const gradeColor = s.grade === 'A' ? '#3fb950' : s.grade === 'B' ? '#d29922' : '#8b949e';
+                const gradeLabel = s.grade === 'A' ? '⭐ Grade A — BEST' : s.grade === 'B' ? 'Grade B — GOOD' : s.grade === 'C' ? 'Grade C — WEAK' : 'SKIP';
+                const rrLabel = s.risk_reward >= 2 ? '✅ GOOD' : s.risk_reward >= 1.5 ? '⚠️ OK' : '❌ WEAK';
+                const volumeLabel = s.volume_rank ? `Volume Rank #${s.volume_rank}` : 'Volume-ranked';
+                return `
+                <div class="card signal-card ${s.action.toLowerCase()}" onclick="openChart('${s.pair}', signalMap['${s.pair}']); showDetails('${s.pair}');" style="cursor:pointer;">
+                    <div class="signal-header">
+                        <span class="pair-name">${s.pair}</span>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                            <span style="font-size:11px;color:#8b949e;">${volumeLabel}</span>
+                            <span class="action-badge ${s.action.toLowerCase()}">${s.action}</span>
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <span style="font-size:12px;font-weight:bold;color:${gradeColor};">${gradeLabel}</span>
+                        <span style="font-size:12px;color:#8b949e;">Quality: <b style="color:#f0f6fc;">${s.quality_score}/100</b></span>
+                    </div>
+                    <div style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 12px;margin-bottom:8px;">
+                        <div style="font-size:11px;color:#8b949e;margin-bottom:4px;">👑 KingTrade Indicator</div>
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <span style="font-size:20px;font-weight:bold;color:${s.king_trade_score>=50?'#3fb950':s.king_trade_score<=-50?'#f85149':'#d29922'};">${s.king_trade_score>0?'+':''}${s.king_trade_score}</span>
+                            <span style="font-size:13px;font-weight:bold;color:${s.king_trade_score>=50?'#3fb950':s.king_trade_score<=-50?'#f85149':'#d29922'};">${s.king_trade_signal}</span>
+                        </div>
+                        <div style="height:6px;background:#21262d;border-radius:3px;margin-top:6px;">
+                            <div style="height:100%;border-radius:3px;width:${Math.abs(s.king_trade_score)}%;background:${s.king_trade_score>=50?'#3fb950':s.king_trade_score<=-50?'#f85149':'#d29922'};"></div>
+                        </div>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill ${s.confidence >= 65 ? 'high' : s.confidence >= 45 ? 'medium' : 'low'}"
+                             style="width: ${s.confidence}%"></div>
+                    </div>
+                    <div style="text-align:center; font-size:13px; margin-bottom:10px; color:#8b949e;">
+                        Confidence: <strong style="color:#f0f6fc;">${s.confidence}/100</strong>
+                    </div>
+                    <div class="signal-details">
+                        <div class="row"><span class="label">Entry Price</span><span class="value">${s.entry_price.toLocaleString()}</span></div>
+                        <div class="row"><span class="label">24h Volume</span><span class="value">${Number(s.market_volume || 0).toLocaleString()}</span></div>
+                        <div class="row"><span class="label">Stop-Loss</span><span class="value" style="color:#f85149;">${s.stop_loss.toLocaleString()} (-${s.stop_loss_pct}%)</span></div>
+                        <div class="row"><span class="label">Target 1</span><span class="value" style="color:#3fb950;">${s.take_profit_1.toLocaleString()}</span></div>
+                        <div class="row"><span class="label">Target 2</span><span class="value" style="color:#3fb950;">${s.take_profit_2.toLocaleString()}</span></div>
+                        <div class="row"><span class="label">Risk/Reward</span><span class="value">1:${s.risk_reward} ${rrLabel}</span></div>
+                        <div class="row"><span class="label">Buy/Sell</span><span class="value">${s.buy_count} buy / ${s.sell_count} sell</span></div>
+                        <div class="row"><span class="label">Timeframe</span><span class="value" style="color:#58a6ff;">${s.timeframe}</span></div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function updateStats(signals) {
+            document.getElementById('totalSignals').textContent = signals.length;
+            document.getElementById('buySignals').textContent = signals.filter(s => s.action === 'BUY').length;
+            document.getElementById('sellSignals').textContent = signals.filter(s => s.action === 'SELL').length;
+            const best = signals.reduce((a, b) => a.confidence > b.confidence ? a : b, signals[0]);
+            document.getElementById('bestSignal').textContent = best ? `${best.confidence}%` : '-';
+        }
+
+        let currentPair = 'BTCUSDT';
+        let currentTF = '60';
+
+        function openChart(pair, signal) {
+            currentPair = pair;
+            document.getElementById('chartTitle').textContent = pair + ' — Live Chart';
+            document.getElementById('chartModal').classList.add('open');
+            loadChart(pair, currentTF);
+            loadSMC(pair, signal);
+        }
+
+        function closeChart() {
+            document.getElementById('chartModal').classList.remove('open');
+            document.getElementById('tvChart').innerHTML = '';
+        }
+
+        function setTF(tf) {
+            currentTF = tf;
+            document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            loadChart(currentPair, tf);
+        }
+
+        function loadChart(pair, tf) {
+            // TradingView free widget — no API key needed
+            const symbol = 'BINANCE:' + pair;
+            document.getElementById('tvChart').innerHTML = `
+                <iframe
+                    src="https://s.tradingview.com/widgetembed/?symbol=${symbol}&interval=${tf}&theme=dark&style=1&locale=en&toolbar_bg=%23161b22&hide_side_toolbar=0&allow_symbol_change=0&studies=MASimple%40tv-basicstudies%2CMASimple%40tv-basicstudies%2CMACD%40tv-basicstudies%2CRSI%40tv-basicstudies%2CSuperTrend%40tv-basicstudies&studies_overrides=%7B%22ma.length%22%3A200%7D"
+                    style="width:100%;height:100%;border:none;"
+                    allowtransparency="true"
+                    allowfullscreen
+                ></iframe>`;
+        }
+
+        function loadSMC(pair, signal) {
+            const panel = document.getElementById('smcPanel');
+            if (!signal) { panel.innerHTML = ''; return; }
+            const smcSignals = (signal.smc_signals || []);
+            if (smcSignals.length === 0) {
+                panel.innerHTML = '<span style="color:#8b949e;">No SMC signals detected</span>';
+                return;
+            }
+            panel.innerHTML = '<span style="color:#8b949e;font-weight:bold;">SMC:</span> ' +
+                smcSignals.map(s => {
+                    const cls = s.signal.includes('BUY') ? 'bull' : s.signal.includes('SELL') ? 'bear' : 'neutral';
+                    return `<span class="smc-tag ${cls}">${s.name.replace('SMC: ','')} — ${s.details}</span>`;
+                }).join(' ');
+        }
+
+        // Close modal on background click
+        document.getElementById('chartModal').addEventListener('click', function(e) {
+            if (e.target === this) closeChart();
+        });
+
+        async function showDetails(pair) {
+            try {
+                const tf = document.getElementById('tfSelect').value;
+                const resp = await fetch(`/api/signal/${pair}?timeframe=${tf}`);
+                const data = await resp.json();
+
+                document.getElementById('detailsPair').textContent = pair;
+                const list = document.getElementById('indicatorList');
+
+                let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+
+                // SMC signals first
+                const smcInds = (data.indicators || []).filter(i => i.name.startsWith('SMC:'));
+                const normalInds = (data.indicators || []).filter(i => !i.name.startsWith('SMC:'));
+
+                if (smcInds.length > 0) {
+                    html += `<div style="grid-column:1/-1;color:#58a6ff;font-weight:bold;margin-top:8px;">🏦 Smart Money Signals:</div>`;
+                    html += smcInds.map(i => `
+                        <div class="indicator-item" style="grid-column:1/-1;">
+                            <span style="color:#f0f6fc;">${i.name}</span>
+                            <span class="indicator-signal ${i.signal}">${i.signal}</span>
+                        </div>
+                        <div style="grid-column:1/-1;font-size:11px;color:#8b949e;padding:0 0 4px 8px;">${i.details}</div>
+                    `).join('');
+                }
+
+                if (normalInds.length > 0) {
+                    html += `<div style="grid-column:1/-1;color:#58a6ff;font-weight:bold;margin-top:8px;">📊 Indicators:</div>`;
+                    html += normalInds.map(i => `
+                        <div class="indicator-item">
+                            <span>${i.name}</span>
+                            <span class="indicator-signal ${i.signal}">${i.signal}</span>
+                        </div>
+                    `).join('');
+                }
+
+                html += '</div>';
+
+                if (data.patterns && data.patterns.length > 0) {
+                    html += '<div style="margin-top:12px;color:#58a6ff;font-weight:bold;">🕯️ Patterns:</div>';
+                    html += data.patterns.map(p => `
+                        <div class="indicator-item">
+                            <span>${p.name} (${Math.round(p.confidence*100)}%)</span>
+                            <span class="indicator-signal ${p.signal}">${p.signal}</span>
+                        </div>
+                        <div style="font-size:11px;color:#8b949e;padding:0 0 4px 8px;">${p.description}</div>
+                    `).join('');
+                }
+
+                list.innerHTML = html;
+                document.getElementById('detailsCard').style.display = 'block';
+                document.getElementById('detailsCard').scrollIntoView({behavior: 'smooth'});
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    </script>
+</body>
+</html>
